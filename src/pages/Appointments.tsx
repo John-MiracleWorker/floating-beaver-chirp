@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { showSuccess } from "@/utils/toast";
 import { MapContainer, TileLayer, Polyline, Marker, Popup } from "react-leaflet";
+import type { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 type Client = {
@@ -272,11 +273,11 @@ const Appointments = () => {
           <Button onClick={planRoute} disabled={loadingRoute || todaysAppointments.length === 0}>
             {loadingRoute ? "Planning..." : "Show Route on Map"}
           </Button>
-          {routeCoords.length > 0 && (
+          {routeCoords.length > 0 && typeof routeCoords[0] !== "undefined" && (
             <div className="mt-4">
               <div className="mb-2 font-medium">Total Route Miles: {totalMiles}</div>
               <MapContainer
-                center={routeCoords[0]}
+                center={routeCoords[0] as LatLngExpression}
                 zoom={12}
                 style={{ height: "300px", width: "100%" }}
               >
@@ -284,9 +285,9 @@ const Appointments = () => {
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   attribution="&copy; OpenStreetMap contributors"
                 />
-                <Polyline positions={routeCoords} color="blue" />
+                <Polyline positions={routeCoords as LatLngExpression[]} pathOptions={{ color: "blue" }} />
                 {routeCoords.map((pos, idx) => (
-                  <Marker key={idx} position={pos}>
+                  <Marker key={idx} position={pos as LatLngExpression}>
                     <Popup>
                       {getClientById(todaysAppointments[idx]?.clientId)?.name || "Stop"}
                     </Popup>
