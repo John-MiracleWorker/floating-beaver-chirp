@@ -1,9 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { showSuccess } from "@/utils/toast";
-import { MapContainer, TileLayer, Polyline, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from "react-leaflet";
 import type { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
 
@@ -60,6 +60,15 @@ const geocodeAddress = async (address: string): Promise<[number, number] | null>
   } catch {
     return null;
   }
+};
+
+// Helper to set map view without using the `center` prop (addresses TS prop mismatch)
+const SetMapView = ({ center, zoom }: { center: LatLngExpression; zoom: number }) => {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, zoom);
+  }, [map, center, zoom]);
+  return null;
 };
 
 const Appointments = () => {
@@ -276,16 +285,13 @@ const Appointments = () => {
           {routeCoords.length > 0 && typeof routeCoords[0] !== "undefined" && (
             <div className="mt-4">
               <div className="mb-2 font-medium">Total Route Miles: {totalMiles}</div>
-              {/* @ts-expect-error center prop missing in types */}
               <MapContainer
-                center={routeCoords[0] as LatLngExpression}
                 zoom={12}
                 style={{ height: "300px", width: "100%" }}
               >
-                {/* @ts-expect-error attribution prop missing in types */}
+                <SetMapView center={routeCoords[0] as LatLngExpression} zoom={12} />
                 <TileLayer
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                  attribution="&copy; OpenStreetMap contributors"
                 />
                 <Polyline positions={routeCoords as LatLngExpression[]} pathOptions={{ color: "blue" }} />
                 {routeCoords.map((pos, idx) => (
