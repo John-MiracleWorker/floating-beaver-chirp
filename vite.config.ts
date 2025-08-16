@@ -10,10 +10,12 @@ export default defineConfig(() => ({
   },
   plugins: [dyadComponentTagger(), react()],
   resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
-      // shim the old react-dom import but let react-dom/client resolve normally
-      "react-dom": path.resolve(__dirname, "./src/shims/react-dom.ts"),
-    },
+    alias: [
+      { find: "@", replacement: path.resolve(__dirname, "./src") },
+      {
+        find: /^react-dom$/,
+        replacement: path.resolve(__dirname, "./src/shims/react-dom.ts"),
+      },
+    ],
   },
 }));
