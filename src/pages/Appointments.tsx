@@ -89,6 +89,7 @@ const Appointments = () => {
   });
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [loadingRoute, setLoadingRoute] = useState(false);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   // Filter appointments for today (LOCAL date)
   const today = toLocalYMD(new Date());
@@ -99,9 +100,6 @@ const Appointments = () => {
         .sort((a, b) => a.time.localeCompare(b.time)),
     [appointments, today]
   );
-
-  // When client list changes, update state
-  const refreshClients = () => setClients(getClients());
 
   // Handle appointment form changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -122,15 +120,43 @@ const Appointments = () => {
     setForm((f) => ({ ...f, clientId: client.id }));
   };
 
-  // Handle appointment submission
+  // Handle appointment submission (create or update)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.date || !form.time || !form.clientId) return;
-    const updated = [form, ...appointments];
+
+    if (editingIndex !== null) {
+      const updated = appointments.map((a, idx) => (idx === editingIndex ? form : a));
+      setAppointments(updated);
+      localStorage.setItem("appointments", JSON.stringify(updated));
+      setEditingIndex(null);
+      setForm(initialForm);
+      showSuccess("Appointment updated!");
+    } else {
+      const updated = [form, ...appointments];
+      setAppointments(updated);
+      localStorage.setItem("appointments", JSON.stringify(updated));
+      setForm(initialForm);
+      showSuccess("Appointment added!");
+    }
+  };
+
+  const handleEditAppointment = (index: number) => {
+    const appt = appointments[index];
+    setForm(appt);
+    setEditingIndex(index);
+    setAddingClient(false);
+  };
+
+  const handleDeleteAppointment = (index: number) => {
+    const updated = appointments.filter((_, i) => i !== index);
     setAppointments(updated);
     localStorage.setItem("appointments", JSON.stringify(updated));
-    setForm(initialForm);
-    showSuccess("Appointment added!");
+    showSuccess("Appointment deleted!");
+    if (editingIndex === index) {
+      setEditingIndex(null);
+      setForm(initialForm);
+    }
   };
 
   // Route planning: geocode addresses and set route
@@ -175,7 +201,7 @@ const Appointments = () => {
     <div className="max-w-2xl mx-auto">
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>Schedule Appointment</CardTitle>
+          <CardTitle>{editingIndex !== null ? "Edit Appointment" : "Schedule Appointment"}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-3">
@@ -276,7 +302,24 @@ const Appointments = () => {
               className="w-full border rounded p-2"
               rows={2}
             />
-            <Button type="submit" className="w-full">Add Appointment</Button>
+            <div className="flex gap-2">
+              <Button type="submit" className="w-full">
+                {editingIndex !== null ? "Update" : "Add Appointment"}
+              </Button>
+              {editingIndex !== null && (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full"
+                  onClick={() => {
+                    setEditingIndex(null);
+                    setForm(initialForm);
+                  }}
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
           </form>
         </CardContent>
       </Card>
@@ -323,15 +366,30 @@ const Appointments = () => {
               {appointments.map((appt, idx) => {
                 const client = getClientById(appt.clientId);
                 return (
-                  <li key={idx} className="border-b pb-2">
-                    <div className="font-semibold">
-                      {appt.date} {appt.time} - {client?.name || "Unknown"}
+                  <li
+                    key={idx}
+                    className="border-b pb-2 flex flex-col md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <div className="font-semibold">
+                        {appt.date} {appt.time} - {client?.name || "Unknown"}
+                      </div>
+                      {appt.location && (
+                        <div className="text-sm text-gray-600">Location: {appt.location}</div>
+                      )}
+                      {client?.address && !appt.location && (
+                        <div className="text-sm text-gray-600">Address: {client.address}</div>
+                      )}
+                      {appt.notes && <div className="text-xs text-gray-500">Notes: {appt.notes}</div>}
                     </div>
-                    {appt.location && <div className="text-sm text-gray-600">Location: {appt.location}</div>}
-                    {client?.address && !appt.location && (
-                      <div className="text-sm text-gray-600">Address: {client.address}</div>
-                    )}
-                    {appt.notes && <div className="text-xs text-gray-500">Notes: {appt.notes}</div>}
+                    <div className="flex gap-2 mt-2 md:mt-0">
+                      <Button size="sm" variant="outline" onClick={() => handleEditAppointment(idx)}>
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => handleDeleteAppointment(idx)}>
+                        Delete
+                      </Button>
+                    </div>
                   </li>
                 );
               })}
