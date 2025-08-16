@@ -1,7 +1,10 @@
 /* Shim for libraries that import { render } from 'react-dom' in React 18+ */
-import * as ReactDOMOriginal from "react-dom";
-export * from "react-dom";
-export { default } from "react-dom";
+// Re-export everything from the real react-dom package. We reference the
+// file in node_modules directly to bypass the alias defined in
+// vite.config.ts and avoid a circular self-import when this shim resolves as
+// "react-dom".
+export * from "../../node_modules/react-dom/index.js";
+export { default } from "../../node_modules/react-dom/index.js";
 
 import { createRoot } from "react-dom/client";
 
