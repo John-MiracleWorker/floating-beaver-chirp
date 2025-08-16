@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { showSuccess } from "@/utils/toast";
+import { showSuccess, showError } from "@/utils/toast";
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from "react-leaflet";
 import type { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -40,15 +40,47 @@ const initialForm = {
   notes: "",
 };
 
-const geocodeAddress = async (address: string): Promise<[number, number] | null> => {
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Safer geocoder: sequential, timeout, and tolerant of non-JSON/failed responses.
+const geocodeAddress = async (
+  address: string,
+  signal?: AbortSignal
+): Promise<[number, number] | null> => {
   if (!address) return null;
-  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  if (data && data.length > 0) {
-    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-  }
-  return null;
+
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+    address
+  )}`;
+
+  // Add a local timeout so a slow request doesn't hang the UI
+  const controller = new AbortController();
+  const combinedSignal = signal ?? controller.signal;
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+
+  // Use fetch and tolerate failures gracefully
+  const res = await fetch(url, {
+    method: "GET",
+    headers: {
+      Accept: "application/json",
+    },
+    signal: combinedSignal,
+  }).catch(() => null);
+
+  clearTimeout(timeoutId);
+
+  if (!res || !("ok" in res) || !res.ok) return null;
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("application/json")) return null;
+
+  const data = await res.json().catch(() => null);
+  if (!Array.isArray(data) || data.length === 0) return null;
+
+  const lat = parseFloat(data[0].lat);
+  const lon = parseFloat(data[0].lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+
+  return [lat, lon];
 };
 
 const SetMapView = ({ center, zoom }: { center: LatLngExpression; zoom: number }) => {
@@ -246,29 +278,53 @@ const Appointments = () => {
 
   const planRoute = async () => {
     setLoadingRoute(true);
-    const stops: RouteStop[] = [];
+    setRouteStops([]);
+
+    const planned: RouteStop[] = [];
+    let failed = 0;
+
+    const addresses: { label: string; address: string }[] = [];
 
     if (routeStart.trim()) {
-      const startGeo = await geocodeAddress(routeStart.trim());
-      if (startGeo) stops.push({ coord: startGeo, label: "Start" });
+      addresses.push({ label: "Start", address: routeStart.trim() });
     }
 
     for (const appt of todaysAppointments) {
       const client = getClientById(appt.client_id);
-      const address = appt.location || client?.address || "";
-      if (address) {
-        const geo = await geocodeAddress(address);
-        if (geo) stops.push({ coord: geo, label: client?.name || "Stop" });
+      const addr = appt.location || client?.address || "";
+      if (addr.trim()) {
+        addresses.push({ label: client?.name || "Stop", address: addr.trim() });
       }
     }
 
     if (routeEnd.trim()) {
-      const endGeo = await geocodeAddress(routeEnd.trim());
-      if (endGeo) stops.push({ coord: endGeo, label: "End" });
+      addresses.push({ label: "End", address: routeEnd.trim() });
     }
 
-    setRouteStops(stops);
+    // Sequential geocode with a small delay to avoid rate-limits
+    for (let i = 0; i < addresses.length; i++) {
+      const a = addresses[i];
+      const coord = await geocodeAddress(a.address).catch(() => null);
+      if (coord) {
+        planned.push({ coord, label: a.label });
+      } else {
+        failed += 1;
+      }
+      if (i < addresses.length - 1) {
+        await sleep(800); // gentle delay between calls
+      }
+    }
+
+    setRouteStops(planned);
     setLoadingRoute(false);
+
+    if (planned.length === 0) {
+      showError("Could not map any locations. Please verify addresses.");
+      return;
+    }
+    if (failed > 0) {
+      showError(`${failed} location${failed > 1 ? "s" : ""} couldn't be geocoded and were skipped.`);
+    }
   };
 
   const totalMiles = useMemo<string>(() => {
