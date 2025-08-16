@@ -286,7 +286,6 @@ const Appointments = () => {
             <div className="mt-4">
               <div className="mb-2 font-medium">Total Route Miles: {totalMiles}</div>
               <MapContainer
-                zoom={12}
                 style={{ height: "300px", width: "100%" }}
               >
                 <SetMapView center={routeCoords[0] as LatLngExpression} zoom={12} />
