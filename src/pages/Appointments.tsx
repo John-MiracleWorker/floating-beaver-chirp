@@ -58,7 +58,7 @@ const geocodeAddress = async (address: string): Promise<[number, number] | null>
   return null;
 };
 
-// Helper to set map view without using the `center` prop (addresses TS prop mismatch)
+// Helper to set map view without using the `center` prop (kept for dynamic updates)
 const SetMapView = ({ center, zoom }: { center: LatLngExpression; zoom: number }) => {
   const map = useMap();
   useEffect(() => {
@@ -177,7 +177,7 @@ const Appointments = () => {
 
   // Calculate total miles (straight-line for demo)
   const totalMiles = useMemo(() => {
-    if (routeCoords.length < 2) return 0;
+    if (routeCoords.length < 2) return 0 as unknown as string;
     let miles = 0;
     for (let i = 1; i < routeCoords.length; i++) {
       const [lat1, lon1] = routeCoords[i - 1];
@@ -335,12 +335,12 @@ const Appointments = () => {
             <div className="mt-4">
               <div className="mb-2 font-medium">Total Route Miles: {totalMiles}</div>
               <MapContainer
+                center={routeCoords[0] as LatLngExpression}
+                zoom={12}
                 style={{ height: "300px", width: "100%" }}
               >
                 <SetMapView center={routeCoords[0] as LatLngExpression} zoom={12} />
-                <TileLayer
-                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                />
+                <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                 <Polyline positions={routeCoords as LatLngExpression[]} pathOptions={{ color: "blue" }} />
                 {routeCoords.map((pos, idx) => (
                   <Marker key={idx} position={pos as LatLngExpression}>
