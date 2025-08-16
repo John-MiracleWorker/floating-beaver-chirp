@@ -6,25 +6,33 @@ import { showSuccess } from "@/utils/toast";
 import { MapContainer, TileLayer, Polyline, Marker, Popup, useMap } from "react-leaflet";
 import type { LatLngExpression } from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthProvider";
 
 type Client = {
   id: string;
+  user_id: string;
   name: string;
   phone: string;
   email: string;
   address: string;
   notes: string;
+  created_at?: string;
 };
 
 type Appointment = {
-  date: string;
-  time: string;
-  clientId: string;
+  id: string;
+  user_id: string;
+  date: string; // YYYY-MM-DD
+  time: string; // e.g., 09:30
+  client_id: string;
   location: string;
   notes: string;
+  created_at?: string;
 };
 
-const initialForm: Appointment = {
+const initialForm = {
   date: "",
   time: "",
   clientId: "",
@@ -32,22 +40,7 @@ const initialForm: Appointment = {
   notes: "",
 };
 
-const getClients = (): Client[] => {
-  const saved = localStorage.getItem("clients");
-  return saved ? JSON.parse(saved) : [];
-};
-
-const getClientById = (id: string): Client | undefined => {
-  return getClients().find((c) => c.id === id);
-};
-
-const getAppointments = (): Appointment[] => {
-  const saved = localStorage.getItem("appointments");
-  return saved ? JSON.parse(saved) : [];
-};
-
 const geocodeAddress = async (address: string): Promise<[number, number] | null> => {
-  // Use Nominatim OpenStreetMap API for geocoding
   if (!address) return null;
   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`;
   const res = await fetch(url);
@@ -58,7 +51,6 @@ const geocodeAddress = async (address: string): Promise<[number, number] | null>
   return null;
 };
 
-// Helper to set map view without using the `center` prop (kept for dynamic updates)
 const SetMapView = ({ center, zoom }: { center: LatLngExpression; zoom: number }) => {
   const map = useMap();
   useEffect(() => {
@@ -67,7 +59,6 @@ const SetMapView = ({ center, zoom }: { center: LatLngExpression; zoom: number }
   return null;
 };
 
-// Get local YYYY-MM-DD (avoid UTC offset issues)
 const toLocalYMD = (d: Date) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -81,11 +72,12 @@ type RouteStop = {
 };
 
 const Appointments = () => {
-  const [form, setForm] = useState<Appointment>(initialForm);
-  const [appointments, setAppointments] = useState<Appointment[]>(getAppointments());
-  const [clients, setClients] = useState<Client[]>(getClients());
+  const { session } = useSupabaseAuth();
+  const queryClient = useQueryClient();
+
+  const [form, setForm] = useState(initialForm);
   const [addingClient, setAddingClient] = useState(false);
-  const [newClient, setNewClient] = useState<Omit<Client, "id">>({
+  const [newClient, setNewClient] = useState<Omit<Client, "id" | "user_id">>({
     name: "",
     phone: "",
     email: "",
@@ -95,81 +87,163 @@ const Appointments = () => {
 
   const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [loadingRoute, setLoadingRoute] = useState(false);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
-  // Start/End locations (persisted)
   const [routeStart, setRouteStart] = useState<string>(() => localStorage.getItem("route-start") || "");
   const [routeEnd, setRouteEnd] = useState<string>(() => localStorage.getItem("route-end") || "");
 
-  // Filter appointments for today (LOCAL date)
+  const { data: clients = [] } = useQuery({
+    queryKey: ["clients"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("clients")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as Client[];
+    },
+  });
+
+  const { data: appointments = [] } = useQuery({
+    queryKey: ["appointments"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("appointments")
+        .select("*")
+        .order("date", { ascending: true })
+        .order("time", { ascending: true });
+      if (error) throw error;
+      return data as Appointment[];
+    },
+  });
+
+  const addClient = useMutation({
+    mutationFn: async (payload: Omit<Client, "id" | "created_at">) => {
+      const { data, error } = await supabase.from("clients").insert(payload).select("*").single();
+      if (error) throw error;
+      return data as Client;
+    },
+    onSuccess: (created) => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      showSuccess("Client added!");
+      setForm((f) => ({ ...f, clientId: created.id }));
+    },
+  });
+
+  const addAppointment = useMutation({
+    mutationFn: async (payload: Omit<Appointment, "id" | "created_at">) => {
+      const { error } = await supabase.from("appointments").insert(payload);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      showSuccess("Appointment added!");
+    },
+  });
+
+  const updateAppointment = useMutation({
+    mutationFn: async (params: { id: string; updates: Partial<Appointment> }) => {
+      const { id, updates } = params;
+      const { error } = await supabase.from("appointments").update(updates).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      showSuccess("Appointment updated!");
+    },
+  });
+
+  const deleteAppointment = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("appointments").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["appointments"] });
+      showSuccess("Appointment deleted!");
+    },
+  });
+
   const today = toLocalYMD(new Date());
   const todaysAppointments = useMemo(
-    () =>
-      appointments
-        .filter((a) => a.date === today)
-        .sort((a, b) => a.time.localeCompare(b.time)),
+    () => appointments.filter((a) => a.date === today).sort((a, b) => a.time.localeCompare(b.time)),
     [appointments, today]
   );
 
-  // Handle appointment form changes
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  // Add new client from appointment form (supports onSubmit or onClick)
   const handleAddClient = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!newClient.name) return;
-    const client = { ...newClient, id: Date.now().toString() };
-    const updated = [client, ...clients];
-    setClients(updated);
-    localStorage.setItem("clients", JSON.stringify(updated));
+    addClient.mutate({
+      user_id: session?.user.id || "",
+      name: newClient.name,
+      phone: newClient.phone,
+      email: newClient.email,
+      address: newClient.address,
+      notes: newClient.notes,
+    });
     setAddingClient(false);
     setNewClient({ name: "", phone: "", email: "", address: "", notes: "" });
-    showSuccess("Client added!");
-    setForm((f) => ({ ...f, clientId: client.id }));
   };
 
-  // Handle appointment submission (create or update)
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.date || !form.time || !form.clientId) return;
 
-    if (editingIndex !== null) {
-      const updated = appointments.map((a, idx) => (idx === editingIndex ? form : a));
-      setAppointments(updated);
-      localStorage.setItem("appointments", JSON.stringify(updated));
-      setEditingIndex(null);
-      setForm(initialForm);
-      showSuccess("Appointment updated!");
+    if (editingId) {
+      updateAppointment.mutate({
+        id: editingId,
+        updates: {
+          date: form.date,
+          time: form.time,
+          client_id: form.clientId,
+          location: form.location,
+          notes: form.notes,
+        },
+      });
+      setEditingId(null);
     } else {
-      const updated = [form, ...appointments];
-      setAppointments(updated);
-      localStorage.setItem("appointments", JSON.stringify(updated));
-      setForm(initialForm);
-      showSuccess("Appointment added!");
+      addAppointment.mutate({
+        user_id: session?.user.id || "",
+        date: form.date,
+        time: form.time,
+        client_id: form.clientId,
+        location: form.location,
+        notes: form.notes,
+      });
     }
+    setForm(initialForm);
   };
 
-  const handleEditAppointment = (index: number) => {
-    const appt = appointments[index];
-    setForm(appt);
-    setEditingIndex(index);
+  const handleEditAppointment = (id: string) => {
+    const appt = appointments.find((a) => a.id === id);
+    if (!appt) return;
+    setForm({
+      date: appt.date,
+      time: appt.time,
+      clientId: appt.client_id,
+      location: appt.location,
+      notes: appt.notes,
+    });
+    setEditingId(id);
     setAddingClient(false);
   };
 
-  const handleDeleteAppointment = (index: number) => {
-    const updated = appointments.filter((_, i) => i !== index);
-    setAppointments(updated);
-    localStorage.setItem("appointments", JSON.stringify(updated));
-    showSuccess("Appointment deleted!");
-    if (editingIndex === index) {
-      setEditingIndex(null);
+  const handleDeleteAppointment = (id: string) => {
+    deleteAppointment.mutate(id);
+    if (editingId === id) {
+      setEditingId(null);
       setForm(initialForm);
     }
   };
 
-  // Route planning: geocode start, today's appointments, and end
+  const getClientById = (id: string): Client | undefined => {
+    return clients.find((c) => c.id === id);
+  };
+
   const planRoute = async () => {
     setLoadingRoute(true);
     const stops: RouteStop[] = [];
@@ -180,7 +254,7 @@ const Appointments = () => {
     }
 
     for (const appt of todaysAppointments) {
-      const client = getClientById(appt.clientId);
+      const client = getClientById(appt.client_id);
       const address = appt.location || client?.address || "";
       if (address) {
         const geo = await geocodeAddress(address);
@@ -197,15 +271,13 @@ const Appointments = () => {
     setLoadingRoute(false);
   };
 
-  // Calculate total miles (straight-line for demo)
   const totalMiles = useMemo<string>(() => {
     if (routeStops.length < 2) return "0.00";
     let miles = 0;
     for (let i = 1; i < routeStops.length; i++) {
       const [lat1, lon1] = routeStops[i - 1].coord;
       const [lat2, lon2] = routeStops[i].coord;
-      // Haversine formula
-      const R = 3958.8; // miles
+      const R = 3958.8;
       const dLat = ((lat2 - lat1) * Math.PI) / 180;
       const dLon = ((lon2 - lon1) * Math.PI) / 180;
       const a =
@@ -226,7 +298,7 @@ const Appointments = () => {
     <div className="max-w-2xl mx-auto">
       <Card className="mb-6">
         <CardHeader>
-          <CardTitle>{editingIndex !== null ? "Edit Appointment" : "Schedule Appointment"}</CardTitle>
+          <CardTitle>{editingId !== null ? "Edit Appointment" : "Schedule Appointment"}</CardTitle>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-3">
@@ -329,15 +401,15 @@ const Appointments = () => {
             />
             <div className="flex gap-2">
               <Button type="submit" className="w-full">
-                {editingIndex !== null ? "Update" : "Add Appointment"}
+                {editingId !== null ? "Update" : "Add Appointment"}
               </Button>
-              {editingIndex !== null && (
+              {editingId !== null && (
                 <Button
                   type="button"
                   variant="secondary"
                   className="w-full"
                   onClick={() => {
-                    setEditingIndex(null);
+                    setEditingId(null);
                     setForm(initialForm);
                   }}
                 >
@@ -410,11 +482,11 @@ const Appointments = () => {
             <div className="text-gray-500">No appointments yet.</div>
           ) : (
             <ul className="space-y-2">
-              {appointments.map((appt, idx) => {
-                const client = getClientById(appt.clientId);
+              {appointments.map((appt) => {
+                const client = getClientById(appt.client_id);
                 return (
                   <li
-                    key={idx}
+                    key={appt.id}
                     className="border-b pb-2 flex flex-col md:flex-row md:items-center md:justify-between"
                   >
                     <div>
@@ -430,10 +502,10 @@ const Appointments = () => {
                       {appt.notes && <div className="text-xs text-gray-500">Notes: {appt.notes}</div>}
                     </div>
                     <div className="flex gap-2 mt-2 md:mt-0">
-                      <Button size="sm" variant="outline" onClick={() => handleEditAppointment(idx)}>
+                      <Button size="sm" variant="outline" onClick={() => handleEditAppointment(appt.id)}>
                         Edit
                       </Button>
-                      <Button size="sm" variant="destructive" onClick={() => handleDeleteAppointment(idx)}>
+                      <Button size="sm" variant="destructive" onClick={() => handleDeleteAppointment(appt.id)}>
                         Delete
                       </Button>
                     </div>

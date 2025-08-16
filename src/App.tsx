@@ -9,25 +9,38 @@ import MileTracker from "./pages/MileTracker";
 import Appointments from "./pages/Appointments";
 import Clients from "./pages/Clients";
 import { NavBar } from "@/components/NavBar";
+import { SupabaseAuthProvider, useSupabaseAuth } from "@/contexts/SupabaseAuthProvider";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import Login from "./pages/Login";
 
 const queryClient = new QueryClient();
+
+const AppShell = () => {
+  const { session } = useSupabaseAuth();
+  return (
+    <BrowserRouter>
+      {session && <NavBar />}
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/" element={<ProtectedRoute><Index /></ProtectedRoute>} />
+        <Route path="/miles" element={<ProtectedRoute><MileTracker /></ProtectedRoute>} />
+        <Route path="/appointments" element={<ProtectedRoute><Appointments /></ProtectedRoute>} />
+        <Route path="/clients" element={<ProtectedRoute><Clients /></ProtectedRoute>} />
+        {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </BrowserRouter>
+  );
+};
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
-        <NavBar />
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/miles" element={<MileTracker />} />
-          <Route path="/appointments" element={<Appointments />} />
-          <Route path="/clients" element={<Clients />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
+      <SupabaseAuthProvider>
+        <AppShell />
+      </SupabaseAuthProvider>
     </TooltipProvider>
   </QueryClientProvider>
 );

@@ -3,17 +3,22 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { showSuccess } from "@/utils/toast";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthProvider";
 
 type Client = {
   id: string;
+  user_id: string;
   name: string;
   phone: string;
   email: string;
   address: string;
   notes: string;
+  created_at?: string;
 };
 
-const initialForm: Omit<Client, "id"> = {
+const initialForm: Omit<Client, "id" | "user_id"> = {
   name: "",
   phone: "",
   email: "",
@@ -22,12 +27,58 @@ const initialForm: Omit<Client, "id"> = {
 };
 
 const Clients = () => {
+  const { session } = useSupabaseAuth();
+  const queryClient = useQueryClient();
+
   const [form, setForm] = useState(initialForm);
-  const [clients, setClients] = useState<Client[]>(() => {
-    const saved = localStorage.getItem("clients");
-    return saved ? JSON.parse(saved) : [];
-  });
   const [editingId, setEditingId] = useState<string | null>(null);
+
+  const { data: clients = [], isLoading } = useQuery({
+    queryKey: ["clients"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("clients")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as Client[];
+    },
+  });
+
+  const addClient = useMutation({
+    mutationFn: async (payload: Omit<Client, "id" | "created_at">) => {
+      const { data, error } = await supabase.from("clients").insert(payload).select("*").single();
+      if (error) throw error;
+      return data as Client;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      showSuccess("Client added!");
+    },
+  });
+
+  const updateClient = useMutation({
+    mutationFn: async (params: { id: string; updates: Partial<Client> }) => {
+      const { id, updates } = params;
+      const { error } = await supabase.from("clients").update(updates).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      showSuccess("Client updated!");
+    },
+  });
+
+  const deleteClient = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("clients").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients"] });
+      showSuccess("Client deleted!");
+    },
+  });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -36,20 +87,19 @@ const Clients = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name) return;
+
     if (editingId) {
-      const updated = clients.map((c) =>
-        c.id === editingId ? { ...c, ...form } : c
-      );
-      setClients(updated);
-      localStorage.setItem("clients", JSON.stringify(updated));
+      updateClient.mutate({ id: editingId, updates: { ...form } });
       setEditingId(null);
-      showSuccess("Client updated!");
     } else {
-      const newClient = { ...form, id: Date.now().toString() };
-      const updated = [newClient, ...clients];
-      setClients(updated);
-      localStorage.setItem("clients", JSON.stringify(updated));
-      showSuccess("Client added!");
+      addClient.mutate({
+        user_id: session?.user.id || "",
+        name: form.name,
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+        notes: form.notes,
+      });
     }
     setForm(initialForm);
   };
@@ -69,10 +119,7 @@ const Clients = () => {
   };
 
   const handleDelete = (id: string) => {
-    const updated = clients.filter((c) => c.id !== id);
-    setClients(updated);
-    localStorage.setItem("clients", JSON.stringify(updated));
-    showSuccess("Client deleted!");
+    deleteClient.mutate(id);
     if (editingId === id) {
       setEditingId(null);
       setForm(initialForm);
@@ -148,7 +195,9 @@ const Clients = () => {
           <CardTitle>Clients</CardTitle>
         </CardHeader>
         <CardContent>
-          {clients.length === 0 ? (
+          {isLoading ? (
+            <div className="text-gray-500">Loading...</div>
+          ) : clients.length === 0 ? (
             <div className="text-gray-500">No clients yet.</div>
           ) : (
             <ul className="space-y-2">

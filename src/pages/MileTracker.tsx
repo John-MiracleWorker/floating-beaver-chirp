@@ -3,15 +3,21 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { showSuccess } from "@/utils/toast";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { useSupabaseAuth } from "@/contexts/SupabaseAuthProvider";
 
 type MileEntry = {
-  date: string;
-  distance: string;
+  id: string;
+  user_id: string;
+  date: string; // YYYY-MM-DD
+  distance: string; // stored as numeric in DB, but input is string
   purpose: string;
   notes: string;
+  created_at?: string;
 };
 
-const initialForm: MileEntry = {
+const initialForm = {
   date: "",
   distance: "",
   purpose: "",
@@ -19,10 +25,33 @@ const initialForm: MileEntry = {
 };
 
 const MileTracker = () => {
-  const [form, setForm] = useState<MileEntry>(initialForm);
-  const [entries, setEntries] = useState<MileEntry[]>(() => {
-    const saved = localStorage.getItem("mile-entries");
-    return saved ? JSON.parse(saved) : [];
+  const { session } = useSupabaseAuth();
+  const queryClient = useQueryClient();
+
+  const [form, setForm] = useState(initialForm);
+
+  const { data: entries = [], isLoading } = useQuery({
+    queryKey: ["mile_entries"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("mile_entries")
+        .select("*")
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data as MileEntry[];
+    },
+  });
+
+  const addEntry = useMutation({
+    mutationFn: async (payload: Omit<MileEntry, "id" | "created_at">) => {
+      const { error } = await supabase.from("mile_entries").insert(payload);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["mile_entries"] });
+      showSuccess("Mile entry added!");
+    },
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -32,11 +61,14 @@ const MileTracker = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.date || !form.distance) return;
-    const updated = [form, ...entries];
-    setEntries(updated);
-    localStorage.setItem("mile-entries", JSON.stringify(updated));
+    addEntry.mutate({
+      user_id: session?.user.id || "",
+      date: form.date,
+      distance: form.distance,
+      purpose: form.purpose,
+      notes: form.notes,
+    });
     setForm(initialForm);
-    showSuccess("Mile entry added!");
   };
 
   return (
@@ -80,7 +112,9 @@ const MileTracker = () => {
               className="w-full border rounded p-2"
               rows={2}
             />
-            <Button type="submit" className="w-full">Add Entry</Button>
+            <Button type="submit" className="w-full" disabled={addEntry.isPending}>
+              {addEntry.isPending ? "Saving..." : "Add Entry"}
+            </Button>
           </form>
         </CardContent>
       </Card>
@@ -89,14 +123,20 @@ const MileTracker = () => {
           <CardTitle>Mileage Log</CardTitle>
         </CardHeader>
         <CardContent>
-          {entries.length === 0 ? (
+          {isLoading ? (
+            <div className="text-gray-500">Loading...</div>
+          ) : entries.length === 0 ? (
             <div className="text-gray-500">No entries yet.</div>
           ) : (
             <ul className="space-y-2">
-              {entries.map((entry, idx) => (
-                <li key={idx} className="border-b pb-2">
-                  <div className="font-semibold">{entry.date} - {entry.distance} mi</div>
-                  {entry.purpose && <div className="text-sm text-gray-600">Purpose: {entry.purpose}</div>}
+              {entries.map((entry) => (
+                <li key={entry.id} className="border-b pb-2">
+                  <div className="font-semibold">
+                    {entry.date} - {entry.distance} mi
+                  </div>
+                  {entry.purpose && (
+                    <div className="text-sm text-gray-600">Purpose: {entry.purpose}</div>
+                  )}
                   {entry.notes && <div className="text-xs text-gray-500">Notes: {entry.notes}</div>}
                 </li>
               ))}
