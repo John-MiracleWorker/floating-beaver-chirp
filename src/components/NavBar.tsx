@@ -5,6 +5,7 @@ const navItems = [
   { to: "/", label: "Home" },
   { to: "/miles", label: "Mile Tracker" },
   { to: "/appointments", label: "Appointments" },
+  { to: "/clients", label: "Clients" },
 ];
 
 export const NavBar = () => {

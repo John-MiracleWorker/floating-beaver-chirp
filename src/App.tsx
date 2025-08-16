@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import MileTracker from "./pages/MileTracker";
 import Appointments from "./pages/Appointments";
+import Clients from "./pages/Clients";
 import { NavBar } from "@/components/NavBar";
 
 const queryClient = new QueryClient();
@@ -22,6 +23,7 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/miles" element={<MileTracker />} />
           <Route path="/appointments" element={<Appointments />} />
+          <Route path="/clients" element={<Clients />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -12,7 +12,7 @@ const Index = () => {
           </CardHeader>
           <CardContent>
             <p className="text-lg text-gray-600 mb-4">
-              Track your miles, schedule appointments, and manage your work efficiently.
+              Track your miles, schedule appointments, manage clients, and more.
             </p>
             <div className="flex flex-col gap-4">
               <Link
@@ -26,6 +26,12 @@ const Index = () => {
                 className="w-full bg-secondary text-secondary-foreground px-4 py-2 rounded text-center font-semibold hover:bg-secondary/80 transition"
               >
                 Appointment Scheduler
+              </Link>
+              <Link
+                to="/clients"
+                className="w-full bg-accent text-accent-foreground px-4 py-2 rounded text-center font-semibold hover:bg-accent/80 transition"
+              >
+                Client Management
               </Link>
             </div>
           </CardContent>
