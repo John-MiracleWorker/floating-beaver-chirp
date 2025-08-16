@@ -1,4 +1,4 @@
-export * from "react-dom/index";
+export * from "react-dom";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
