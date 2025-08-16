@@ -1,18 +1,19 @@
-import * as ReactDOM from "react-dom";
+import ReactDOMDefault, * as ReactDOMAll from "react-dom";
 import * as ReactDOMClient from "react-dom/client";
 import type { ReactNode } from "react";
 
+// Re-export all named exports from react-dom.
 export * from "react-dom";
 
-// Provide a default export so that libraries importing ReactDOM as a default get the correct object.
-export default ReactDOM;
+// Export the default export from react-dom so that libraries expecting a default get the actual module.
+export default ReactDOMDefault;
 
-// Explicitly export createPortal.
-export const createPortal = ReactDOM.createPortal;
+// Export createPortal from the default export.
+export const createPortal = ReactDOMDefault.createPortal;
 
 /**
  * Compatibility for libraries that still call ReactDOM.render in React 18+.
- * Proxies to createRoot(container).render(element) and returns the root.
+ * This function proxies to createRoot(container).render(element) and returns the root.
  */
 export function render(
   element: ReactNode,
