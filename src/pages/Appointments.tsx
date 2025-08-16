@@ -50,16 +50,12 @@ const geocodeAddress = async (address: string): Promise<[number, number] | null>
   // Use Nominatim OpenStreetMap API for geocoding
   if (!address) return null;
   const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`;
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data && data.length > 0) {
-      return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
-    }
-    return null;
-  } catch {
-    return null;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data && data.length > 0) {
+    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
   }
+  return null;
 };
 
 // Helper to set map view without using the `center` prop (addresses TS prop mismatch)
@@ -104,9 +100,9 @@ const Appointments = () => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  // Add new client from appointment form
-  const handleAddClient = (e: React.FormEvent) => {
-    e.preventDefault();
+  // Add new client from appointment form (supports onSubmit or onClick)
+  const handleAddClient = (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (!newClient.name) return;
     const client = { ...newClient, id: Date.now().toString() };
     const updated = [client, ...clients];
@@ -217,7 +213,7 @@ const Appointments = () => {
                 </Button>
               </div>
               {addingClient && (
-                <form onSubmit={handleAddClient} className="mt-2 space-y-2 bg-gray-50 p-2 rounded">
+                <div className="mt-2 space-y-2 bg-gray-50 p-2 rounded">
                   <Input
                     name="name"
                     value={newClient.name}
@@ -251,8 +247,10 @@ const Appointments = () => {
                     className="w-full border rounded p-2"
                     rows={2}
                   />
-                  <Button type="submit" className="w-full">Save Client</Button>
-                </form>
+                  <Button type="button" className="w-full" onClick={() => handleAddClient()}>
+                    Save Client
+                  </Button>
+                </div>
               )}
             </div>
             <Input
