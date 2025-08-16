@@ -294,6 +294,9 @@ const Appointments = () => {
   const hasAnyStop = !!routeStart.trim() || !!routeEnd.trim() || todaysAppointments.length > 0;
   const routeCoords = routeStops.map((s) => s.coord) as LatLngExpression[];
 
+  // Workaround for react-leaflet typing mismatch in some setups.
+  const MapAny = MapContainer as any;
+
   return (
     <div className="max-w-2xl mx-auto">
       <Card className="mb-6">
@@ -454,7 +457,7 @@ const Appointments = () => {
           {routeStops.length > 0 && typeof routeCoords[0] !== "undefined" && (
             <div className="mt-2">
               <div className="mb-2 font-medium">Total Route Miles: {totalMiles}</div>
-              <MapContainer
+              <MapAny
                 center={routeCoords[0] as LatLngExpression}
                 zoom={12}
                 style={{ height: "300px", width: "100%" }}
@@ -467,7 +470,7 @@ const Appointments = () => {
                     <Popup>{stop.label}</Popup>
                   </Marker>
                 ))}
-              </MapContainer>
+              </MapAny>
             </div>
           )}
         </CardContent>
