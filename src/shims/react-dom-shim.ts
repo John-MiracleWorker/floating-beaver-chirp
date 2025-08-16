@@ -1,21 +1,14 @@
-import ReactDOM from "../../node_modules/react-dom";
-import * as ReactDOMClient from "../../node_modules/react-dom/client";
+import * as ReactDOM from "react-dom";
+import * as ReactDOMClient from "react-dom/client";
 import type { ReactNode } from "react";
 
-export default ReactDOM;
-export const createPortal = ReactDOM.createPortal;
-
-/**
- * Compatibility for libraries that still call ReactDOM.render in React 18+.
- * This proxy calls createRoot(container).render(element) and returns the root.
- */
-export function render(
-  element: ReactNode,
-  container: Element | DocumentFragment,
-  callback?: () => void
-) {
-  const root = ReactDOMClient.createRoot(container as Element);
+const render = (element: ReactNode, container: Element, callback?: () => void) => {
+  const root = ReactDOMClient.createRoot(container);
   root.render(element);
   if (typeof callback === "function") callback();
   return root;
-}
+};
+
+export { render, createPortal } from "react-dom";
+export * from "react-dom/client";
+export default ReactDOM;
