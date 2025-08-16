@@ -12,6 +12,7 @@ export default defineConfig(() => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "react-dom": path.resolve(__dirname, "./src/shims/react-dom.ts"),
     },
   },
 }));
