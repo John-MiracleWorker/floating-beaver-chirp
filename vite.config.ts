@@ -12,8 +12,8 @@ export default defineConfig(() => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // shim the old react-dom import but let react-dom/client resolve normally
       "react-dom": path.resolve(__dirname, "./src/shims/react-dom.ts"),
-      "react-dom/client": path.resolve(__dirname, "./src/shims/react-dom.ts"),
     },
   },
 }));
