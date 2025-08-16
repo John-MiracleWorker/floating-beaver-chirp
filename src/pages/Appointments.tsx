@@ -67,6 +67,14 @@ const SetMapView = ({ center, zoom }: { center: LatLngExpression; zoom: number }
   return null;
 };
 
+// Get local YYYY-MM-DD (avoid UTC offset issues)
+const toLocalYMD = (d: Date) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
 const Appointments = () => {
   const [form, setForm] = useState<Appointment>(initialForm);
   const [appointments, setAppointments] = useState<Appointment[]>(getAppointments());
@@ -82,8 +90,8 @@ const Appointments = () => {
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
   const [loadingRoute, setLoadingRoute] = useState(false);
 
-  // Filter appointments for today
-  const today = new Date().toISOString().slice(0, 10);
+  // Filter appointments for today (LOCAL date)
+  const today = toLocalYMD(new Date());
   const todaysAppointments = useMemo(
     () =>
       appointments
