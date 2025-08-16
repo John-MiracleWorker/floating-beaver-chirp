@@ -276,11 +276,13 @@ const Appointments = () => {
           {routeCoords.length > 0 && typeof routeCoords[0] !== "undefined" && (
             <div className="mt-4">
               <div className="mb-2 font-medium">Total Route Miles: {totalMiles}</div>
+              {/* @ts-expect-error center prop missing in types */}
               <MapContainer
                 center={routeCoords[0] as LatLngExpression}
                 zoom={12}
                 style={{ height: "300px", width: "100%" }}
               >
+                {/* @ts-expect-error attribution prop missing in types */}
                 <TileLayer
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                   attribution="&copy; OpenStreetMap contributors"
