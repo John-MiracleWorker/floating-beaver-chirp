@@ -1,6 +1,14 @@
-export * from "react-dom";
+import * as ReactDOM from "react-dom";
+import * as ReactDOMClient from "react-dom/client";
 import type { ReactNode } from "react";
-import { createRoot } from "react-dom/client";
+
+export * from "react-dom";
+
+// Provide a default export so that libraries importing ReactDOM as a default get the correct object.
+export default ReactDOM;
+
+// Explicitly export createPortal.
+export const createPortal = ReactDOM.createPortal;
 
 /**
  * Compatibility for libraries that still call ReactDOM.render in React 18+.
@@ -11,7 +19,7 @@ export function render(
   container: Element | DocumentFragment,
   callback?: () => void
 ) {
-  const root = createRoot(container as Element);
+  const root = ReactDOMClient.createRoot(container as Element);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   root.render(element as any);
   if (typeof callback === "function") callback();
