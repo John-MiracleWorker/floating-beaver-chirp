@@ -75,6 +75,11 @@ const toLocalYMD = (d: Date) => {
   return `${y}-${m}-${day}`;
 };
 
+type RouteStop = {
+  coord: [number, number];
+  label: string;
+};
+
 const Appointments = () => {
   const [form, setForm] = useState<Appointment>(initialForm);
   const [appointments, setAppointments] = useState<Appointment[]>(getAppointments());
@@ -87,9 +92,14 @@ const Appointments = () => {
     address: "",
     notes: "",
   });
-  const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
+
+  const [routeStops, setRouteStops] = useState<RouteStop[]>([]);
   const [loadingRoute, setLoadingRoute] = useState(false);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
+
+  // Start/End locations (persisted)
+  const [routeStart, setRouteStart] = useState<string>(() => localStorage.getItem("route-start") || "");
+  const [routeEnd, setRouteEnd] = useState<string>(() => localStorage.getItem("route-end") || "");
 
   // Filter appointments for today (LOCAL date)
   const today = toLocalYMD(new Date());
@@ -159,29 +169,41 @@ const Appointments = () => {
     }
   };
 
-  // Route planning: geocode addresses and set route
+  // Route planning: geocode start, today's appointments, and end
   const planRoute = async () => {
     setLoadingRoute(true);
-    const coords: [number, number][] = [];
+    const stops: RouteStop[] = [];
+
+    if (routeStart.trim()) {
+      const startGeo = await geocodeAddress(routeStart.trim());
+      if (startGeo) stops.push({ coord: startGeo, label: "Start" });
+    }
+
     for (const appt of todaysAppointments) {
       const client = getClientById(appt.clientId);
       const address = appt.location || client?.address || "";
       if (address) {
         const geo = await geocodeAddress(address);
-        if (geo) coords.push(geo);
+        if (geo) stops.push({ coord: geo, label: client?.name || "Stop" });
       }
     }
-    setRouteCoords(coords);
+
+    if (routeEnd.trim()) {
+      const endGeo = await geocodeAddress(routeEnd.trim());
+      if (endGeo) stops.push({ coord: endGeo, label: "End" });
+    }
+
+    setRouteStops(stops);
     setLoadingRoute(false);
   };
 
   // Calculate total miles (straight-line for demo)
-  const totalMiles = useMemo(() => {
-    if (routeCoords.length < 2) return 0 as unknown as string;
+  const totalMiles = useMemo<string>(() => {
+    if (routeStops.length < 2) return "0.00";
     let miles = 0;
-    for (let i = 1; i < routeCoords.length; i++) {
-      const [lat1, lon1] = routeCoords[i - 1];
-      const [lat2, lon2] = routeCoords[i];
+    for (let i = 1; i < routeStops.length; i++) {
+      const [lat1, lon1] = routeStops[i - 1].coord;
+      const [lat2, lon2] = routeStops[i].coord;
       // Haversine formula
       const R = 3958.8; // miles
       const dLat = ((lat2 - lat1) * Math.PI) / 180;
@@ -195,7 +217,10 @@ const Appointments = () => {
       miles += R * c;
     }
     return miles.toFixed(2);
-  }, [routeCoords]);
+  }, [routeStops]);
+
+  const hasAnyStop = !!routeStart.trim() || !!routeEnd.trim() || todaysAppointments.length > 0;
+  const routeCoords = routeStops.map((s) => s.coord) as LatLngExpression[];
 
   return (
     <div className="max-w-2xl mx-auto">
@@ -323,16 +348,39 @@ const Appointments = () => {
           </form>
         </CardContent>
       </Card>
+
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Today's Route</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Button onClick={planRoute} disabled={loadingRoute || todaysAppointments.length === 0}>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <Input
+              placeholder="Start location (optional)"
+              value={routeStart}
+              onChange={(e) => {
+                setRouteStart(e.target.value);
+                localStorage.setItem("route-start", e.target.value);
+              }}
+            />
+            <Input
+              placeholder="End location (optional)"
+              value={routeEnd}
+              onChange={(e) => {
+                setRouteEnd(e.target.value);
+                localStorage.setItem("route-end", e.target.value);
+              }}
+            />
+          </div>
+          <Button
+            onClick={planRoute}
+            disabled={loadingRoute || !hasAnyStop}
+            className="w-full md:w-auto"
+          >
             {loadingRoute ? "Planning..." : "Show Route on Map"}
           </Button>
-          {routeCoords.length > 0 && typeof routeCoords[0] !== "undefined" && (
-            <div className="mt-4">
+          {routeStops.length > 0 && typeof routeCoords[0] !== "undefined" && (
+            <div className="mt-2">
               <div className="mb-2 font-medium">Total Route Miles: {totalMiles}</div>
               <MapContainer
                 center={routeCoords[0] as LatLngExpression}
@@ -341,12 +389,10 @@ const Appointments = () => {
               >
                 <SetMapView center={routeCoords[0] as LatLngExpression} zoom={12} />
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                <Polyline positions={routeCoords as LatLngExpression[]} pathOptions={{ color: "blue" }} />
-                {routeCoords.map((pos, idx) => (
-                  <Marker key={idx} position={pos as LatLngExpression}>
-                    <Popup>
-                      {getClientById(todaysAppointments[idx]?.clientId)?.name || "Stop"}
-                    </Popup>
+                <Polyline positions={routeCoords} pathOptions={{ color: "blue" }} />
+                {routeStops.map((stop, idx) => (
+                  <Marker key={idx} position={stop.coord as LatLngExpression}>
+                    <Popup>{stop.label}</Popup>
                   </Marker>
                 ))}
               </MapContainer>
@@ -354,6 +400,7 @@ const Appointments = () => {
           )}
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Upcoming Appointments</CardTitle>
