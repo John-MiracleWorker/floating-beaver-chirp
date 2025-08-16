@@ -12,6 +12,10 @@ export default defineConfig(() => ({
   resolve: {
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "./src") },
+      {
+        find: /^react-dom(\/.*)?$/,
+        replacement: path.resolve(__dirname, "node_modules/react-dom") + "$1",
+      },
     ],
   },
 }));
