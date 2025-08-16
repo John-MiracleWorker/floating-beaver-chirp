@@ -1,10 +1,10 @@
-export * from "react-dom";
+export * from "react-dom/index";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 
 /**
  * Compatibility for libraries that still call ReactDOM.render in React 18+.
- * This proxies to createRoot(container).render(element) and returns the root.
+ * Proxies to createRoot(container).render(element) and returns the root.
  */
 export function render(
   element: ReactNode,
