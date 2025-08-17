@@ -27,7 +27,12 @@ serve(async (req) => {
     const { data: { user } } = await userClient.auth.getUser();
     if (!user) throw new Error("Unauthorized");
 
-    const body = await req.json();
+    // Manually parse the request body to avoid issues with missing Content-Type header
+    const bodyText = await req.text();
+    if (!bodyText) {
+      throw new Error("Request body is empty.");
+    }
+    const body = JSON.parse(bodyText);
 
     if (req.method === "POST") { // Generate signed URL
       const { fileName } = body;
