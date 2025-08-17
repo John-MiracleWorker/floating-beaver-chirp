@@ -256,35 +256,32 @@ export default function Appointments() {
       const coordsFull = await Promise.all(addressesFull.map(geocode));
       setRouteCoords(coordsFull);
 
-      // For leave-times, build just start+stops (ignore end)
-      const coordsLT = [
-        ...(routeStart.trim() ? [coordsFull[0]] : []),
-        ...coordsFull.slice(routeStart.trim() ? 1 : 0, stops.length + (routeStart.trim() ? 1 : 0))
-      ];
-      if (coordsLT.length >= 2) {
-        const coordStringLT = coordsLT.map(([lat, lng]) => `${lng},${lat}`).join(";");
-        const osrmRes = await fetch(
-          `https://router.project-osrm.org/route/v1/driving/${coordStringLT}?overview=false`
-        );
-        const osrmData = await osrmRes.json();
-        const legs = osrmData.routes?.[0]?.legs || [];
-        const durations = legs.map((leg: any) => leg.duration);
-        const times: string[] = [];
-        todaysAppointments.forEach((appt, idx) => {
-          const [h, m] = appt.time.split(":").map(Number);
-          const apptSec = h * 3600 + m * 60;
-          const travelSec =
-            idx === 0 && !routeStart.trim()
-              ? 0
-              : durations[idx] || 0;
-          let leaveSec = apptSec - travelSec;
-          if (leaveSec < 0) leaveSec = 0;
-          const lh = Math.floor(leaveSec / 3600);
-          const lm = Math.floor((leaveSec % 3600) / 60);
-          times.push(`${String(lh).padStart(2, "0")}:${String(lm).padStart(2, "0")}`);
-        });
-        setLeaveTimes(times);
+      // compute leave times only if start address provided
+      let times: string[] = [];
+      if (routeStart.trim()) {
+        // legs from start to each stop
+        const coordsLT = coordsFull.slice(0, stops.length + 1);
+        if (coordsLT.length >= 2) {
+          const coordString = coordsLT.map(([lat, lng]) => `${lng},${lat}`).join(";");
+          const osrmRes = await fetch(
+            `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=false`
+          );
+          const osrmData = await osrmRes.json();
+          const legs = osrmData.routes?.[0]?.legs || [];
+          const durations = legs.map((leg: any) => leg.duration);
+          todaysAppointments.forEach((appt, idx) => {
+            const [h, m] = appt.time.split(":").map(Number);
+            const apptSec = h * 3600 + m * 60;
+            const travelSec = durations[idx] || 0;
+            let leaveSec = apptSec - travelSec;
+            if (leaveSec < 0) leaveSec = 0;
+            const lh = Math.floor(leaveSec / 3600);
+            const lm = Math.floor((leaveSec % 3600) / 60);
+            times.push(`${String(lh).padStart(2, "0")}:${String(lm).padStart(2, "0")}`);
+          });
+        }
       }
+      setLeaveTimes(times);
 
       // Google Maps link
       const origin = encodeURIComponent(addressesFull[0]);
