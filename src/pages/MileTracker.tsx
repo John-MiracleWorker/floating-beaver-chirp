@@ -77,29 +77,24 @@ export default function MileTracker() {
 
   const uploadReceipt = useMutation({
     mutationFn: async (file: File) => {
-      const userId = session?.user.id;
-      if (!userId) throw new Error("Not signed in");
-      const buffer = await file.arrayBuffer();
-      
-      // Convert buffer to base64 safely without exceeding call stack
-      const bytes = new Uint8Array(buffer);
-      let binary = '';
-      for (let i = 0; i < bytes.byteLength; i++) {
-        binary += String.fromCharCode(bytes[i]);
-      }
-      const base64 = btoa(binary);
+      // 1. Get a signed URL from our edge function
+      const { data: urlData, error: urlError } = await supabase.functions.invoke("receipt-handler", {
+        method: "POST",
+        body: { fileName: file.name },
+      });
+      if (urlError) throw urlError;
+      const { signedUrl, path } = urlData;
 
-      const res = await fetch(
-        `https://${"llcheplsmuqjzdvjksot"}.supabase.co/functions/v1/uploadReceipt`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ userId, fileName: file.name, fileData: base64 }),
-        }
-      );
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || "Upload failed");
-      return json.fileUrl;
+      // 2. Upload the file directly to Supabase Storage
+      const { error: uploadError } = await supabase.storage.from("receipts").uploadToSignedUrl(path, signedUrl.split('?token=')[1], file);
+      if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
+
+      // 3. Create the database record
+      const { error: recordError } = await supabase.functions.invoke("receipt-handler", {
+        method: "PUT",
+        body: { path, fileName: file.name },
+      });
+      if (recordError) throw recordError;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
@@ -216,7 +211,7 @@ export default function MileTracker() {
           <input type="file" onChange={handleFileChange} />
           <Button
             onClick={() => receiptFile && uploadReceipt.mutate(receiptFile)}
-            disabled={!receiptFile}
+            disabled={!receiptFile || uploadReceipt.status === 'pending'}
           >
             {uploadReceipt.status === "pending" ? "Uploading..." : "Upload Receipt"}
           </Button>
