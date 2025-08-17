@@ -117,7 +117,12 @@ export default function MileTracker() {
       setReceiptFile(null);
     },
     onError: (error: any) => {
-      showError(error.message || "Receipt upload failed");
+      // Detect missing bucket
+      if (error.message && error.message.includes("The resource was not found")) {
+        showError("Storage bucket 'receipts' not found – please create it in Supabase dashboard under Storage > Buckets.");
+      } else {
+        showError(error.message || "Receipt upload failed");
+      }
     },
   });
 
