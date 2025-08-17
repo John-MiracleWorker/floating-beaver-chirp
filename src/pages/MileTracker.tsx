@@ -80,7 +80,15 @@ export default function MileTracker() {
       const userId = session?.user.id;
       if (!userId) throw new Error("Not signed in");
       const buffer = await file.arrayBuffer();
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      
+      // Convert buffer to base64 safely without exceeding call stack
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const base64 = btoa(binary);
+
       const res = await fetch(
         `https://${"llcheplsmuqjzdvjksot"}.supabase.co/functions/v1/uploadReceipt`,
         {
@@ -112,7 +120,7 @@ export default function MileTracker() {
     if (!form.date || !form.distance) return;
     const userId = session?.user.id;
     if (!userId) {
-      showError("You must be signed in to add entries.");
+      showError("You should be signed in to add entries.");
       return;
     }
     addEntry.mutate({
