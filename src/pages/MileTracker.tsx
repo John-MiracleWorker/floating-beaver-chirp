@@ -80,19 +80,23 @@ export default function MileTracker() {
       // 1. Get a signed URL from our edge function
       const { data: urlData, error: urlError } = await supabase.functions.invoke("receipt-handler", {
         method: "POST",
-        body: { fileName: file.name },
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name }),
       });
       if (urlError) throw urlError;
       const { signedUrl, path } = urlData;
 
       // 2. Upload the file directly to Supabase Storage
-      const { error: uploadError } = await supabase.storage.from("receipts").uploadToSignedUrl(path, signedUrl.split('?token=')[1], file);
+      const { error: uploadError } = await supabase.storage
+        .from("receipts")
+        .uploadToSignedUrl(path, signedUrl.split("?token=")[1], file);
       if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
 
       // 3. Create the database record
       const { error: recordError } = await supabase.functions.invoke("receipt-handler", {
         method: "PUT",
-        body: { path, fileName: file.name },
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path, fileName: file.name }),
       });
       if (recordError) throw recordError;
     },
@@ -211,7 +215,7 @@ export default function MileTracker() {
           <input type="file" onChange={handleFileChange} />
           <Button
             onClick={() => receiptFile && uploadReceipt.mutate(receiptFile)}
-            disabled={!receiptFile || uploadReceipt.status === 'pending'}
+            disabled={!receiptFile || uploadReceipt.status === "pending"}
           >
             {uploadReceipt.status === "pending" ? "Uploading..." : "Upload Receipt"}
           </Button>
@@ -238,5 +242,5 @@ export default function MileTracker() {
         </CardContent>
       </Card>
     </div>
-  );
+);
 }
