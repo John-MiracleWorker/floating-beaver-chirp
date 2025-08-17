@@ -1,3 +1,4 @@
+import PwaInstallPrompt from "@/components/PwaInstallPrompt";
 import { MadeWithDyad } from "@/components/made-with-dyad";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -34,6 +35,7 @@ const Index = () => {
                 Client Management
               </Link>
             </div>
+            <PwaInstallPrompt />
           </CardContent>
         </Card>
         <MadeWithDyad />
