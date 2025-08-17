@@ -13,6 +13,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "./src") },
+      { find: "react/jsx-dev-runtime", replacement: "react/jsx-runtime" },
     ],
   },
 });
