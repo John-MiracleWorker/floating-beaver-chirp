@@ -32,6 +32,7 @@ export default function MileTracker() {
   const queryClient = useQueryClient();
   const [form, setForm] = useState(initialForm);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptDate, setReceiptDate] = useState<string>("");
 
   const { data: entries = [], isLoading: loadingEntries } = useQuery<MileEntry[]>({
     queryKey: ["mile_entries"],
@@ -76,21 +77,24 @@ export default function MileTracker() {
   });
 
   const uploadReceipt = useMutation({
-    mutationFn: async (file: File) => {
+    mutationFn: async ({ file, date }: { file: File; date: string }) => {
       const userId = session?.user.id;
       if (!userId) {
         throw new Error("You must be signed in to upload receipts.");
       }
-      const path = `${userId}/${Date.now()}_${file.name}`;
-      // 1. Upload file directly to storage
+
+      const year = date ? new Date(date).getFullYear() : null;
+      const folder = year === 2025 ? "2025/" : "";
+      const path = `${userId}/${folder}${Date.now()}_${file.name}`;
+
       const { error: uploadError } = await supabase.storage
         .from("receipts")
         .upload(path, file);
       if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
-      // 2. Get public URL (synchronous)
+
       const { data } = supabase.storage.from("receipts").getPublicUrl(path);
       const publicUrl = data.publicUrl;
-      // 3. Insert database record
+
       const { error: recordError } = await supabase
         .from("receipts")
         .insert({ user_id: userId, file_name: file.name, file_url: publicUrl });
@@ -100,6 +104,7 @@ export default function MileTracker() {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       showSuccess("Receipt uploaded!");
       setReceiptFile(null);
+      setReceiptDate("");
     },
     onError: (err: any) => {
       showError(err.message || "Receipt upload failed");
@@ -208,10 +213,22 @@ export default function MileTracker() {
           <CardTitle>Receipts</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
+          <Input
+            type="date"
+            value={receiptDate}
+            onChange={(e) => setReceiptDate(e.target.value)}
+            placeholder="Receipt Date"
+          />
           <input type="file" onChange={handleFileChange} />
           <Button
-            onClick={() => receiptFile && uploadReceipt.mutate(receiptFile)}
-            disabled={!receiptFile || uploadReceipt.status === "pending"}
+            onClick={() => {
+              if (receiptFile && receiptDate) {
+                uploadReceipt.mutate({ file: receiptFile, date: receiptDate });
+              } else {
+                showError("Please select a receipt file and date.");
+              }
+            }}
+            disabled={!receiptFile || !receiptDate || uploadReceipt.status === "pending"}
           >
             {uploadReceipt.status === "pending" ? "Uploading..." : "Upload Receipt"}
           </Button>
