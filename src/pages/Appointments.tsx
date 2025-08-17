@@ -77,7 +77,11 @@ const Appointments = () => {
   const { session } = useSupabaseAuth();
   const queryClient = useQueryClient();
 
+  // appointment form state
   const [form, setForm] = useState(initialForm);
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  // client inline creation
   const [addingClient, setAddingClient] = useState(false);
   const [newClient, setNewClient] = useState<Omit<Client, "id" | "user_id">>({
     name: "",
@@ -87,17 +91,13 @@ const Appointments = () => {
     notes: "",
   });
 
+  // route planning state
   const [routeStops, setRouteStops] = useState<MapMarker[]>([]);
   const [loadingRoute, setLoadingRoute] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [routeStart, setRouteStart] = useState(() => localStorage.getItem("route-start") || "");
+  const [routeEnd, setRouteEnd] = useState(() => localStorage.getItem("route-end") || "");
 
-  const [routeStart, setRouteStart] = useState<string>(
-    () => localStorage.getItem("route-start") || ""
-  );
-  const [routeEnd, setRouteEnd] = useState<string>(
-    () => localStorage.getItem("route-end") || ""
-  );
-
+  // fetch clients and appointments
   const { data: clients = [] } = useQuery<Client[]>({
     queryKey: ["clients"],
     queryFn: async () => {
@@ -123,6 +123,7 @@ const Appointments = () => {
     },
   });
 
+  // mutations
   const addClient = useMutation({
     mutationFn: async (payload: Omit<Client, "id" | "created_at">) => {
       const { data, error } = await supabase
@@ -147,15 +148,12 @@ const Appointments = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["appointments"] });
-      showSuccess("Appointment added!");
+      showSuccess("Appointment saved!");
     },
   });
 
   const updateAppointment = useMutation({
-    mutationFn: async (params: {
-      id: string;
-      updates: Partial<Appointment>;
-    }) => {
+    mutationFn: async (params: { id: string; updates: Partial<Appointment> }) => {
       const { error } = await supabase
         .from("appointments")
         .update(params.updates)
@@ -170,10 +168,7 @@ const Appointments = () => {
 
   const deleteAppointment = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
-        .from("appointments")
-        .delete()
-        .eq("id", id);
+      const { error } = await supabase.from("appointments").delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -182,30 +177,15 @@ const Appointments = () => {
     },
   });
 
-  const today = toLocalYMD(new Date());
-  const todaysAppointments = useMemo(
-    () =>
-      appointments
-        .filter((a) => a.date === today)
-        .sort((a, b) => a.time.localeCompare(b.time)),
-    [appointments, today]
-  );
-
-  const handleChange = (
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >
-  ) => {
+  // handlers
+  const handleChange = (e: React.ChangeEvent<any>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
   const handleAddClient = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!newClient.name) return;
-    addClient.mutate({
-      user_id: session?.user.id || "",
-      ...newClient,
-    });
+    addClient.mutate({ user_id: session?.user.id || "", ...newClient });
     setAddingClient(false);
     setNewClient({ name: "", phone: "", email: "", address: "", notes: "" });
   };
@@ -213,27 +193,19 @@ const Appointments = () => {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.date || !form.time || !form.clientId) return;
+    const payload = {
+      user_id: session?.user.id || "",
+      date: form.date,
+      time: form.time,
+      client_id: form.clientId,
+      location: form.location,
+      notes: form.notes,
+    };
     if (editingId) {
-      updateAppointment.mutate({
-        id: editingId,
-        updates: {
-          date: form.date,
-          time: form.time,
-          client_id: form.clientId,
-          location: form.location,
-          notes: form.notes,
-        },
-      });
+      updateAppointment.mutate({ id: editingId, updates: payload });
       setEditingId(null);
     } else {
-      addAppointment.mutate({
-        user_id: session?.user.id || "",
-        date: form.date,
-        time: form.time,
-        client_id: form.clientId,
-        location: form.location,
-        notes: form.notes,
-      });
+      addAppointment.mutate(payload);
     }
     setForm(initialForm);
   };
@@ -260,7 +232,12 @@ const Appointments = () => {
     }
   };
 
-  const getClientById = (id: string) => clients.find((c) => c.id === id);
+  // route planning
+  const today = toLocalYMD(new Date());
+  const todaysAppointments = useMemo(
+    () => appointments.filter((a) => a.date === today).sort((a, b) => a.time.localeCompare(b.time)),
+    [appointments, today]
+  );
 
   const planRoute = async () => {
     setLoadingRoute(true);
@@ -271,7 +248,7 @@ const Appointments = () => {
     const addresses: { label: string; address: string }[] = [];
     if (routeStart.trim()) addresses.push({ label: "Start", address: routeStart.trim() });
     for (const appt of todaysAppointments) {
-      const client = getClientById(appt.client_id);
+      const client = clients.find((c) => c.id === appt.client_id);
       const addr = appt.location || client?.address || "";
       if (addr.trim()) addresses.push({ label: client?.name || "Stop", address: addr.trim() });
     }
@@ -279,11 +256,8 @@ const Appointments = () => {
 
     for (let i = 0; i < addresses.length; i++) {
       const coord = await geocodeAddress(addresses[i].address).catch(() => null);
-      if (coord) {
-        planned.push({ coord, popupText: addresses[i].label });
-      } else {
-        failed++;
-      }
+      if (coord) planned.push({ coord, popupText: addresses[i].label });
+      else failed++;
       if (i < addresses.length - 1) await sleep(800);
     }
 
@@ -291,11 +265,9 @@ const Appointments = () => {
     setLoadingRoute(false);
 
     if (planned.length === 0) {
-      showError("Could not map any locations. Please verify addresses.");
-      return;
-    }
-    if (failed > 0) {
-      showError(`${failed} location${failed > 1 ? "s" : ""} couldn't be geocoded and were skipped.`);
+      showError("No locations mapped. Please check addresses.");
+    } else if (failed > 0) {
+      showError(`${failed} location${failed > 1 ? "s" : ""} skipped.`);
     }
   };
 
@@ -323,9 +295,145 @@ const Appointments = () => {
   const routeCoords = routeStops.map((s) => s.coord);
 
   return (
-    <div className="max-w-2xl mx-auto">
-      {/* form and list sections unchanged */}
-      <Card className="mb-6">
+    <div className="max-w-2xl mx-auto space-y-6">
+      {/* Appointment form */}
+      <Card>
+        <CardHeader>
+          <CardTitle>{editingId ? "Edit Appointment" : "Add Appointment"}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <Input type="date" name="date" value={form.date} onChange={handleChange} required />
+            <Input type="time" name="time" value={form.time} onChange={handleChange} required />
+            <div className="flex gap-2">
+              <select
+                name="clientId"
+                value={form.clientId}
+                onChange={handleChange}
+                required
+                className="flex-1 border rounded px-2 py-1"
+              >
+                <option value="">Select client</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <Button type="button" variant="outline" onClick={() => setAddingClient(true)}>
+                + New Client
+              </Button>
+            </div>
+            {addingClient && (
+              <div className="space-y-2 border p-2 rounded">
+                <Input
+                  name="name"
+                  value={newClient.name}
+                  onChange={(e) => setNewClient({ ...newClient, name: e.target.value })}
+                  placeholder="Name"
+                  required
+                />
+                <Input
+                  name="phone"
+                  value={newClient.phone}
+                  onChange={(e) => setNewClient({ ...newClient, phone: e.target.value })}
+                  placeholder="Phone"
+                />
+                <Input
+                  name="email"
+                  value={newClient.email}
+                  onChange={(e) => setNewClient({ ...newClient, email: e.target.value })}
+                  placeholder="Email"
+                  type="email"
+                />
+                <Input
+                  name="address"
+                  value={newClient.address}
+                  onChange={(e) => setNewClient({ ...newClient, address: e.target.value })}
+                  placeholder="Address"
+                />
+                <textarea
+                  name="notes"
+                  value={newClient.notes}
+                  onChange={(e) => setNewClient({ ...newClient, notes: e.target.value })}
+                  placeholder="Notes"
+                  className="w-full border rounded p-2"
+                  rows={2}
+                />
+                <div className="flex gap-2">
+                  <Button type="button" onClick={handleAddClient}>
+                    Save Client
+                  </Button>
+                  <Button type="button" variant="secondary" onClick={() => setAddingClient(false)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+            <Input
+              name="location"
+              value={form.location}
+              onChange={handleChange}
+              placeholder="Location (optional)"
+            />
+            <textarea
+              name="notes"
+              value={form.notes}
+              onChange={handleChange}
+              placeholder="Notes"
+              className="w-full border rounded p-2"
+              rows={2}
+            />
+            <Button type="submit" className="w-full">
+              {editingId ? "Update Appointment" : "Add Appointment"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+
+      {/* Upcoming appointments */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Upcoming Appointments</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {appointments.length === 0 ? (
+            <div className="text-gray-500">No appointments yet.</div>
+          ) : (
+            <ul className="space-y-2">
+              {appointments.map((appt) => {
+                const client = clients.find((c) => c.id === appt.client_id);
+                return (
+                  <li key={appt.id} className="border-b pb-2 flex justify-between items-start">
+                    <div>
+                      <div className="font-semibold">
+                        {appt.date} {appt.time} – {client?.name || "Unknown"}
+                      </div>
+                      {appt.location && (
+                        <div className="text-sm text-gray-600">Location: {appt.location}</div>
+                      )}
+                      {appt.notes && (
+                        <div className="text-xs text-gray-500">Notes: {appt.notes}</div>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={() => handleEditAppointment(appt.id)}>
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => handleDeleteAppointment(appt.id)}>
+                        Delete
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Today's Route */}
+      <Card>
         <CardHeader>
           <CardTitle>Today's Route</CardTitle>
         </CardHeader>
@@ -365,7 +473,6 @@ const Appointments = () => {
           )}
         </CardContent>
       </Card>
-      {/* upcoming appointments list */}
     </div>
   );
 };

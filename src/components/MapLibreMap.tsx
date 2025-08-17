@@ -90,6 +90,7 @@ const MapLibreMap: React.FC<MapLibreMapProps> = ({
             type: "LineString",
             coordinates: line.map(([lat, lng]) => [lng, lat]),
           },
+          properties: {},
         },
       });
       m.addLayer({
