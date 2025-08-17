@@ -89,26 +89,23 @@ export default function MileTracker() {
   // upload receipt
   const uploadReceipt = useMutation({
     mutationFn: async (file: File) => {
-      const path = `${session?.user.id}/${Date.now()}_${file.name}`;
-      const { data: uploadData, error: uploadErr } = await supabase
-        .storage
-        .from("receipts")
-        .upload(path, file);
+      const userId = session?.user?.id;
+      if (!userId) {
+        throw new Error("You must be signed in to upload a receipt.");
+      }
+
+      const path = `${userId}/${Date.now()}_${file.name}`;
+      const { error: uploadErr } = await supabase.storage.from("receipts").upload(path, file);
       if (uploadErr) throw uploadErr;
 
-      const { data: urlData } = supabase
-        .storage
-        .from("receipts")
-        .getPublicUrl(path);
+      const { data: urlData } = supabase.storage.from("receipts").getPublicUrl(path);
       const publicUrl = urlData.publicUrl;
 
-      const { error: insertErr } = await supabase
-        .from("receipts")
-        .insert({
-          user_id: session?.user.id || "",
-          file_name: file.name,
-          file_url: publicUrl,
-        });
+      const { error: insertErr } = await supabase.from("receipts").insert({
+        user_id: userId,
+        file_name: file.name,
+        file_url: publicUrl,
+      });
       if (insertErr) throw insertErr;
     },
     onSuccess: () => {
@@ -117,9 +114,12 @@ export default function MileTracker() {
       setReceiptFile(null);
     },
     onError: (error: any) => {
-      // Detect missing bucket
       if (error.message && error.message.includes("The resource was not found")) {
-        showError("Storage bucket 'receipts' not found – please create it in Supabase dashboard under Storage > Buckets.");
+        showError(
+          "Storage bucket 'receipts' not found – please create it in Supabase dashboard under Storage > Buckets."
+        );
+      } else if (error.message && /row-level security/i.test(error.message)) {
+        showError("Upload blocked by security policy. Please try again now that policies were reset.");
       } else {
         showError(error.message || "Receipt upload failed");
       }
@@ -133,8 +133,13 @@ export default function MileTracker() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.date || !form.distance) return;
+    const userId = session?.user?.id;
+    if (!userId) {
+      showError("You must be signed in to add entries.");
+      return;
+    }
     addEntry.mutate({
-      user_id: session?.user.id || "",
+      user_id: userId,
       date: form.date,
       distance: form.distance,
       purpose: form.purpose,
