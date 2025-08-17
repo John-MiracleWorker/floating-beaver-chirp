@@ -10,11 +10,19 @@ import { useSupabaseAuth } from "@/contexts/SupabaseAuthProvider";
 type MileEntry = {
   id: string;
   user_id: string;
-  date: string; // YYYY-MM-DD
-  distance: string; // stored as numeric in DB, but input is string
+  date: string;
+  distance: string;
   purpose: string;
   notes: string;
   created_at?: string;
+};
+
+type Receipt = {
+  id: string;
+  user_id: string;
+  file_name: string;
+  file_url: string;
+  created_at: string;
 };
 
 const initialForm = {
@@ -24,13 +32,13 @@ const initialForm = {
   notes: "",
 };
 
-const MileTracker = () => {
+export default function MileTracker() {
   const { session } = useSupabaseAuth();
   const queryClient = useQueryClient();
-
   const [form, setForm] = useState(initialForm);
 
-  const { data: entries = [], isLoading } = useQuery({
+  // entries
+  const { data: entries = [], isLoading: loadingEntries } = useQuery<MileEntry[]>({
     queryKey: ["mile_entries"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -39,10 +47,29 @@ const MileTracker = () => {
         .order("date", { ascending: false })
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return data as MileEntry[];
+      return data;
     },
   });
 
+  // receipts
+  const { data: receipts = [], isLoading: loadingReceipts } = useQuery<Receipt[]>({
+    queryKey: ["receipts"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("receipts")
+        .select("*")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+  });
+
+  // total miles
+  const totalMiles = entries
+    .reduce((sum, e) => sum + parseFloat(e.distance || "0"), 0)
+    .toFixed(1);
+
+  // add entry
   const addEntry = useMutation({
     mutationFn: async (payload: Omit<MileEntry, "id" | "created_at">) => {
       const { error } = await supabase.from("mile_entries").insert(payload);
@@ -51,6 +78,32 @@ const MileTracker = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["mile_entries"] });
       showSuccess("Mile entry added!");
+      setForm(initialForm);
+    },
+  });
+
+  // upload receipt
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const uploadReceipt = useMutation({
+    mutationFn: async (file: File) => {
+      const path = `${session?.user.id}/${Date.now()}_${file.name}`;
+      const { error: upErr } = await supabase.storage.from("receipts").upload(path, file);
+      if (upErr) throw upErr;
+      const { data } = supabase.storage.from("receipts").getPublicUrl(path);
+      const publicUrl = data.publicUrl;
+      const { error: insErr } = await supabase
+        .from("receipts")
+        .insert({
+          user_id: session?.user.id || "",
+          file_name: file.name,
+          file_url: publicUrl,
+        });
+      if (insErr) throw insErr;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["receipts"] });
+      showSuccess("Receipt uploaded!");
+      setReceiptFile(null);
     },
   });
 
@@ -68,11 +121,20 @@ const MileTracker = () => {
       purpose: form.purpose,
       notes: form.notes,
     });
-    setForm(initialForm);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setReceiptFile(e.target.files?.[0] ?? null);
+  };
+
+  const handleUpload = () => {
+    if (receiptFile) uploadReceipt.mutate(receiptFile);
   };
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl mx-auto space-y-6">
+      <div className="text-lg font-semibold">Total Miles: {totalMiles}</div>
+
       <Card className="mb-6">
         <CardHeader>
           <CardTitle>Log Miles</CardTitle>
@@ -85,7 +147,6 @@ const MileTracker = () => {
               value={form.date}
               onChange={handleChange}
               required
-              placeholder="Date"
             />
             <Input
               type="number"
@@ -112,18 +173,19 @@ const MileTracker = () => {
               className="w-full border rounded p-2"
               rows={2}
             />
-            <Button type="submit" className="w-full" disabled={addEntry.isPending}>
-              {addEntry.isPending ? "Saving..." : "Add Entry"}
+            <Button type="submit" className="w-full">
+              Add Entry
             </Button>
           </form>
         </CardContent>
       </Card>
+
       <Card>
         <CardHeader>
           <CardTitle>Mileage Log</CardTitle>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {loadingEntries ? (
             <div className="text-gray-500">Loading...</div>
           ) : entries.length === 0 ? (
             <div className="text-gray-500">No entries yet.</div>
@@ -137,7 +199,41 @@ const MileTracker = () => {
                   {entry.purpose && (
                     <div className="text-sm text-gray-600">Purpose: {entry.purpose}</div>
                   )}
-                  {entry.notes && <div className="text-xs text-gray-500">Notes: {entry.notes}</div>}
+                  {entry.notes && (
+                    <div className="text-xs text-gray-500">Notes: {entry.notes}</div>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Receipts</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <input type="file" onChange={handleFileChange} />
+          <Button onClick={handleUpload} disabled={!receiptFile}>
+            {uploadReceipt.status === "pending" ? "Uploading..." : "Upload Receipt"}
+          </Button>
+          {loadingReceipts ? (
+            <div className="text-gray-500">Loading receipts...</div>
+          ) : receipts.length === 0 ? (
+            <div className="text-gray-500">No receipts uploaded.</div>
+          ) : (
+            <ul className="space-y-2">
+              {receipts.map((r) => (
+                <li key={r.id}>
+                  <a
+                    href={r.file_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-blue-500 hover:underline"
+                  >
+                    {r.file_name}
+                  </a>
                 </li>
               ))}
             </ul>
@@ -146,6 +242,4 @@ const MileTracker = () => {
       </Card>
     </div>
   );
-};
-
-export default MileTracker;
+}
