@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { showSuccess } from "@/utils/toast";
+import { showSuccess, showError } from "@/utils/toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthProvider";
@@ -36,6 +36,7 @@ export default function MileTracker() {
   const { session } = useSupabaseAuth();
   const queryClient = useQueryClient();
   const [form, setForm] = useState(initialForm);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
   // entries
   const { data: entries = [], isLoading: loadingEntries } = useQuery<MileEntry[]>({
@@ -80,30 +81,43 @@ export default function MileTracker() {
       showSuccess("Mile entry added!");
       setForm(initialForm);
     },
+    onError: (error: any) => {
+      showError(error.message || "Failed to add entry");
+    },
   });
 
   // upload receipt
-  const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const uploadReceipt = useMutation({
     mutationFn: async (file: File) => {
       const path = `${session?.user.id}/${Date.now()}_${file.name}`;
-      const { error: upErr } = await supabase.storage.from("receipts").upload(path, file);
-      if (upErr) throw upErr;
-      const { data } = supabase.storage.from("receipts").getPublicUrl(path);
-      const publicUrl = data.publicUrl;
-      const { error: insErr } = await supabase
+      const { data: uploadData, error: uploadErr } = await supabase
+        .storage
+        .from("receipts")
+        .upload(path, file);
+      if (uploadErr) throw uploadErr;
+
+      const { data: urlData } = supabase
+        .storage
+        .from("receipts")
+        .getPublicUrl(path);
+      const publicUrl = urlData.publicUrl;
+
+      const { error: insertErr } = await supabase
         .from("receipts")
         .insert({
           user_id: session?.user.id || "",
           file_name: file.name,
           file_url: publicUrl,
         });
-      if (insErr) throw insErr;
+      if (insertErr) throw insertErr;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       showSuccess("Receipt uploaded!");
       setReceiptFile(null);
+    },
+    onError: (error: any) => {
+      showError(error.message || "Receipt upload failed");
     },
   });
 
