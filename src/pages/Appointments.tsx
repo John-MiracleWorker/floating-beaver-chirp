@@ -1,7 +1,9 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, ChangeEvent, FormEvent } from "react";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { showSuccess, showError } from "@/utils/toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -44,7 +46,7 @@ const toLocalYMD = (d: Date) => {
   return `${y}-${m}-${day}`;
 };
 
-const Appointments = () => {
+export default function Appointments() {
   const { session } = useSupabaseAuth();
   const queryClient = useQueryClient();
 
@@ -142,11 +144,11 @@ const Appointments = () => {
     },
   });
 
-  const handleChange = (e: React.ChangeEvent<any>) => {
+  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleAddClient = (e?: React.FormEvent) => {
+  const handleAddClient = (e?: FormEvent) => {
     e?.preventDefault();
     if (!newClient.name) return;
     addClient.mutate({ user_id: session?.user.id || "", ...newClient });
@@ -154,7 +156,7 @@ const Appointments = () => {
     setNewClient({ name: "", phone: "", email: "", address: "", notes: "" });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!form.date || !form.time || !form.clientId) return;
     const payload = {
@@ -174,9 +176,7 @@ const Appointments = () => {
     setForm(initialForm);
   };
 
-  const handleEditAppointment = (id: string) => {
-    const appt = appointments.find((a) => a.id === id);
-    if (!appt) return;
+  const handleEdit = (appt: Appointment) => {
     setForm({
       date: appt.date,
       time: appt.time,
@@ -184,11 +184,11 @@ const Appointments = () => {
       location: appt.location,
       notes: appt.notes,
     });
-    setEditingId(id);
+    setEditingId(appt.id);
     setAddingClient(false);
   };
 
-  const handleDeleteAppointment = (id: string) => {
+  const handleDelete = (id: string) => {
     deleteAppointment.mutate(id);
     if (editingId === id) {
       setEditingId(null);
@@ -208,33 +208,213 @@ const Appointments = () => {
   const planRoute = () => {
     const addresses: string[] = [];
     if (routeStart.trim()) addresses.push(routeStart.trim());
-    todaysAppointments.forEach((appt) => {
-      const client = clients.find((c) => c.id === appt.client_id);
-      const addr = appt.location || client?.address || "";
+    todaysAppointments.forEach((a) => {
+      const client = clients.find((c) => c.id === a.client_id);
+      const addr = a.location || client?.address || "";
       if (addr.trim()) addresses.push(addr.trim());
     });
     if (routeEnd.trim()) addresses.push(routeEnd.trim());
-
     if (addresses.length < 2) {
-      showError("Need at least two locations to plan a route.");
+      showError("Need at least two locations.");
       return;
     }
-
     const origin = encodeURIComponent(addresses[0]);
-    const destination = encodeURIComponent(addresses[addresses.length - 1]);
-    const waypoints = addresses.slice(1, -1).map(encodeURIComponent).join("|");
-    const waypointParam = waypoints ? `&waypoints=${waypoints}` : "";
-    const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}${waypointParam}&travelmode=driving`;
-
+    const dest = encodeURIComponent(addresses[addresses.length - 1]);
+    const wps = addresses.slice(1, -1).map(encodeURIComponent).join("|");
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}${
+      wps ? `&waypoints=${wps}` : ""
+    }&travelmode=driving`;
     setRouteUrl(url);
+    localStorage.setItem("route-start", routeStart);
+    localStorage.setItem("route-end", routeEnd);
     showSuccess("Route link generated!");
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      {/* ... rest of component unchanged ... */}
+    <div className="max-w-xl mx-auto space-y-6 py-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>{editingId ? "Edit Appointment" : "New Appointment"}</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <Input name="date" type="date" value={form.date} onChange={handleChange} required />
+            <Input name="time" type="time" value={form.time} onChange={handleChange} required />
+            <div>
+              <Select
+                value={form.clientId}
+                onValueChange={(v) => setForm((f) => ({ ...f, clientId: v }))}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select client" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                variant="link"
+                size="sm"
+                className="mt-1"
+                onClick={() => setAddingClient((v) => !v)}
+              >
+                {addingClient ? "Cancel new client" : "Add new client"}
+              </Button>
+            </div>
+            {addingClient && (
+              <div className="space-y-2 border p-3 rounded">
+                <Input
+                  name="name"
+                  placeholder="Name"
+                  value={newClient.name}
+                  onChange={(e) =>
+                    setNewClient({ ...newClient, [e.target.name]: e.target.value })
+                  }
+                  required
+                />
+                <Input
+                  name="phone"
+                  placeholder="Phone"
+                  value={newClient.phone}
+                  onChange={(e) =>
+                    setNewClient({ ...newClient, [e.target.name]: e.target.value })
+                  }
+                />
+                <Input
+                  name="email"
+                  placeholder="Email"
+                  type="email"
+                  value={newClient.email}
+                  onChange={(e) =>
+                    setNewClient({ ...newClient, [e.target.name]: e.target.value })
+                  }
+                />
+                <Input
+                  name="address"
+                  placeholder="Address"
+                  value={newClient.address}
+                  onChange={(e) =>
+                    setNewClient({ ...newClient, [e.target.name]: e.target.value })
+                  }
+                />
+                <Textarea
+                  name="notes"
+                  placeholder="Notes"
+                  value={newClient.notes}
+                  onChange={(e) =>
+                    setNewClient({ ...newClient, [e.target.name]: e.target.value })
+                  }
+                  rows={2}
+                />
+                <Button onClick={handleAddClient} className="w-full">
+                  Save Client
+                </Button>
+              </div>
+            )}
+            <Input
+              name="location"
+              placeholder="Location (override address)"
+              value={form.location}
+              onChange={handleChange}
+            />
+            <Textarea
+              name="notes"
+              placeholder="Notes"
+              value={form.notes}
+              onChange={handleChange}
+              rows={2}
+            />
+            <div className="flex gap-2">
+              <Button type="submit" className="flex-1">
+                {editingId ? "Update" : "Add"}
+              </Button>
+              {editingId && (
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setEditingId(null);
+                    setForm(initialForm);
+                  }}
+                  className="flex-1"
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Today's Appointments</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {todaysAppointments.length === 0 ? (
+            <div className="text-gray-500">No appointments today.</div>
+          ) : (
+            <ul className="space-y-2">
+              {todaysAppointments.map((a) => {
+                const client = clients.find((c) => c.id === a.client_id);
+                return (
+                  <li key={a.id} className="border-b pb-2 flex justify-between items-start">
+                    <div>
+                      <div className="font-semibold">
+                        {a.time} – {client?.name || "Unknown"}
+                      </div>
+                      {a.location && <div className="text-sm">{a.location}</div>}
+                      {a.notes && <div className="text-xs text-gray-500">{a.notes}</div>}
+                    </div>
+                    <div className="flex gap-1">
+                      <Button size="sm" variant="outline" onClick={() => handleEdit(a)}>
+                        Edit
+                      </Button>
+                      <Button size="sm" variant="destructive" onClick={() => handleDelete(a.id)}>
+                        Delete
+                      </Button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Plan Route</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Input
+            placeholder="Start address"
+            value={routeStart}
+            onChange={(e) => setRouteStart(e.target.value)}
+          />
+          <Input
+            placeholder="End address"
+            value={routeEnd}
+            onChange={(e) => setRouteEnd(e.target.value)}
+          />
+          <Button onClick={planRoute} className="w-full">
+            Generate Google Maps Link
+          </Button>
+          {routeUrl && (
+            <a
+              href={routeUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-blue-500 hover:underline"
+            >
+              Open in Google Maps
+            </a>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
-};
-
-export default Appointments;
+}
