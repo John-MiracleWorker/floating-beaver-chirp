@@ -77,27 +77,23 @@ export default function MileTracker() {
 
   const uploadReceipt = useMutation({
     mutationFn: async (file: File) => {
-      // 1. Get a signed URL from our edge function
-      const { data: urlData, error: urlError } = await supabase.functions.invoke("receipt-handler", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: file.name }),
-      });
-      if (urlError) throw urlError;
-      const { signedUrl, path } = urlData;
-
-      // 2. Upload the file directly to Supabase Storage
+      const userId = session?.user.id;
+      if (!userId) {
+        throw new Error("You must be signed in to upload receipts.");
+      }
+      const path = `${userId}/${Date.now()}_${file.name}`;
+      // 1. Upload file directly to storage
       const { error: uploadError } = await supabase.storage
         .from("receipts")
-        .uploadToSignedUrl(path, signedUrl.split("?token=")[1], file);
+        .upload(path, file);
       if (uploadError) throw new Error(`Storage upload failed: ${uploadError.message}`);
-
-      // 3. Create the database record
-      const { error: recordError } = await supabase.functions.invoke("receipt-handler", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path, fileName: file.name }),
-      });
+      // 2. Get public URL (synchronous)
+      const { data } = supabase.storage.from("receipts").getPublicUrl(path);
+      const publicUrl = data.publicUrl;
+      // 3. Insert database record
+      const { error: recordError } = await supabase
+        .from("receipts")
+        .insert({ user_id: userId, file_name: file.name, file_url: publicUrl });
       if (recordError) throw recordError;
     },
     onSuccess: () => {
@@ -242,5 +238,5 @@ export default function MileTracker() {
         </CardContent>
       </Card>
     </div>
-);
+  );
 }
