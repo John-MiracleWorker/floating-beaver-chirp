@@ -13,8 +13,6 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: "@", replacement: path.resolve(__dirname, "./src") },
-      // Route bare 'react-dom' imports to our shim (avoid matching subpaths like 'react-dom/client')
-      { find: /^react-dom$/, replacement: path.resolve(__dirname, "./src/shims/react-dom-shim.ts") },
     ],
   },
 });
