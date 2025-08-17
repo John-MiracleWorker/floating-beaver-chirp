@@ -83,14 +83,6 @@ const geocodeAddress = async (
   return [lat, lon];
 };
 
-const SetMapView = ({ center, zoom }: { center: LatLngExpression; zoom: number }) => {
-  const map = useMap();
-  useEffect(() => {
-    map.setView(center, zoom);
-  }, [map, center, zoom]);
-  return null;
-};
-
 const toLocalYMD = (d: Date) => {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");
@@ -101,6 +93,14 @@ const toLocalYMD = (d: Date) => {
 type RouteStop = {
   coord: [number, number];
   label: string;
+};
+
+const ChangeView = ({ center, zoom }: { center: LatLngExpression; zoom: number }) => {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, zoom);
+  }, [center, zoom, map]);
+  return null;
 };
 
 const Appointments = () => {
@@ -350,9 +350,6 @@ const Appointments = () => {
   const hasAnyStop = !!routeStart.trim() || !!routeEnd.trim() || todaysAppointments.length > 0;
   const routeCoords = routeStops.map((s) => s.coord) as LatLngExpression[];
 
-  // Workaround for react-leaflet typing mismatch in some setups.
-  const MapAny = MapContainer as any;
-
   return (
     <div className="max-w-2xl mx-auto">
       <Card className="mb-6">
@@ -513,12 +510,12 @@ const Appointments = () => {
           {routeStops.length > 0 && typeof routeCoords[0] !== "undefined" && (
             <div className="mt-2">
               <div className="mb-2 font-medium">Total Route Miles: {totalMiles}</div>
-              <MapAny
+              <MapContainer
+                style={{ height: "300px", width: "100%" }}
                 center={routeCoords[0] as LatLngExpression}
                 zoom={12}
-                style={{ height: "300px", width: "100%" }}
               >
-                <SetMapView center={routeCoords[0] as LatLngExpression} zoom={12} />
+                <ChangeView center={routeCoords[0] as LatLngExpression} zoom={12} />
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
                 <Polyline positions={routeCoords} pathOptions={{ color: "blue" }} />
                 {routeStops.map((stop, idx) => (
@@ -526,7 +523,7 @@ const Appointments = () => {
                     <Popup>{stop.label}</Popup>
                   </Marker>
                 ))}
-              </MapAny>
+              </MapContainer>
             </div>
           )}
         </CardContent>
