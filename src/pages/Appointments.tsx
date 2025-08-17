@@ -36,7 +36,7 @@ type Appointment = {
   id: string;
   user_id: string;
   date: string;
-  time: string; // "HH:mm"
+  time: string;
   client_id: string;
   location: string;
   notes: string;
@@ -94,7 +94,6 @@ export default function Appointments() {
   );
   const [routeUrl, setRouteUrl] = useState<string | null>(null);
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
-  const [leaveTimes, setLeaveTimes] = useState<string[]>([]);
 
   const { data: clients = [] } = useQuery<Client[]>({
     queryKey: ["clients"],
@@ -236,7 +235,6 @@ export default function Appointments() {
   );
 
   const planRoute = async () => {
-    setLeaveTimes([]);
     const stops = todaysAppointments.map((a) => {
       const client = clients.find((c) => c.id === a.client_id);
       return (a.location || client?.address || "").trim();
@@ -250,40 +248,11 @@ export default function Appointments() {
       showError("Need at least two locations.");
       return;
     }
-
     const loading = showLoading("Calculating route...");
     try {
       const coordsFull = await Promise.all(addressesFull.map(geocode));
       setRouteCoords(coordsFull);
 
-      // compute leave times only if start address provided
-      let times: string[] = [];
-      if (routeStart.trim()) {
-        // legs from start to each stop
-        const coordsLT = coordsFull.slice(0, stops.length + 1);
-        if (coordsLT.length >= 2) {
-          const coordString = coordsLT.map(([lat, lng]) => `${lng},${lat}`).join(";");
-          const osrmRes = await fetch(
-            `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=false`
-          );
-          const osrmData = await osrmRes.json();
-          const legs = osrmData.routes?.[0]?.legs || [];
-          const durations = legs.map((leg: any) => leg.duration);
-          todaysAppointments.forEach((appt, idx) => {
-            const [h, m] = appt.time.split(":").map(Number);
-            const apptSec = h * 3600 + m * 60;
-            const travelSec = durations[idx] || 0;
-            let leaveSec = apptSec - travelSec;
-            if (leaveSec < 0) leaveSec = 0;
-            const lh = Math.floor(leaveSec / 3600);
-            const lm = Math.floor((leaveSec % 3600) / 60);
-            times.push(`${String(lh).padStart(2, "0")}:${String(lm).padStart(2, "0")}`);
-          });
-        }
-      }
-      setLeaveTimes(times);
-
-      // Google Maps link
       const origin = encodeURIComponent(addressesFull[0]);
       const dest = encodeURIComponent(addressesFull[addressesFull.length - 1]);
       const wps = addressesFull.slice(1, -1).map(encodeURIComponent).join("|");
@@ -305,7 +274,6 @@ export default function Appointments() {
 
   return (
     <div className="max-w-xl mx-auto space-y-6 py-4">
-      {/* Add/edit form */}
       <Card>
         <CardHeader>
           <CardTitle>{editingId ? "Edit Appointment" : "New Appointment"}</CardTitle>
@@ -423,7 +391,6 @@ export default function Appointments() {
         </CardContent>
       </Card>
 
-      {/* Today's list with leave times */}
       <Card>
         <CardHeader>
           <CardTitle>Today's Appointments</CardTitle>
@@ -433,33 +400,22 @@ export default function Appointments() {
             <div className="text-gray-500">No appointments today.</div>
           ) : (
             <ul className="space-y-2">
-              {todaysAppointments.map((a, idx) => {
+              {todaysAppointments.map((a) => {
                 const client = clients.find((c) => c.id === a.client_id);
                 return (
-                  <li key={a.id} className="border-b pb-2">
-                    <div className="flex justify-between">
-                      <div>
-                        <div className="font-semibold">
-                          {a.time} – {client?.name || "Unknown"}
-                        </div>
-                        {a.location && <div className="text-sm">{a.location}</div>}
-                        {a.notes && <div className="text-xs text-gray-500">{a.notes}</div>}
+                  <li key={a.id} className="border-b pb-2 flex justify-between items-start">
+                    <div>
+                      <div className="font-semibold">
+                        {a.time} – {client?.name || "Unknown"}
                       </div>
+                      {a.location && <div className="text-sm">{a.location}</div>}
+                      {a.notes && <div className="text-xs text-gray-500">{a.notes}</div>}
                     </div>
-                    {leaveTimes[idx] && (
-                      <div className="text-xs text-blue-600 mt-1">
-                        Leave by: {leaveTimes[idx]}
-                      </div>
-                    )}
-                    <div className="flex gap-1 mt-2">
+                    <div className="flex gap-1">
                       <Button size="sm" variant="outline" onClick={() => handleEdit(a)}>
                         Edit
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => handleDelete(a.id)}
-                      >
+                      <Button size="sm" variant="destructive" onClick={() => handleDelete(a.id)}>
                         Delete
                       </Button>
                     </div>
@@ -471,7 +427,6 @@ export default function Appointments() {
         </CardContent>
       </Card>
 
-      {/* Route planner */}
       <Card>
         <CardHeader>
           <CardTitle>Plan Route</CardTitle>
