@@ -3,6 +3,14 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   showSuccess,
   showError,
@@ -41,6 +49,10 @@ type Appointment = {
   location: string;
   notes: string;
   created_at?: string;
+  samples_collected: boolean;
+  samples_dropped_off: boolean;
+  sample_details: string | null;
+  drop_off_timestamp: string | null;
 };
 
 const initialForm = {
@@ -95,6 +107,10 @@ export default function Appointments() {
   const [routeUrl, setRouteUrl] = useState<string | null>(null);
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
 
+  const [isSampleDialogOpen, setIsSampleDialogOpen] = useState(false);
+  const [currentAppointment, setCurrentAppointment] = useState<Appointment | null>(null);
+  const [sampleDetails, setSampleDetails] = useState("");
+
   const { data: clients = [] } = useQuery<Client[]>({
     queryKey: ["clients"],
     queryFn: async () => {
@@ -138,7 +154,7 @@ export default function Appointments() {
   });
 
   const addAppointment = useMutation({
-    mutationFn: async (payload: Omit<Appointment, "id" | "created_at">) => {
+    mutationFn: async (payload: Omit<Appointment, "id" | "created_at" | "samples_collected" | "samples_dropped_off" | "sample_details" | "drop_off_timestamp">) => {
       const { error } = await supabase.from("appointments").insert(payload);
       if (error) throw error;
     },
@@ -225,6 +241,35 @@ export default function Appointments() {
     }
   };
 
+  const handleCollectSamplesClick = (appt: Appointment) => {
+    setCurrentAppointment(appt);
+    setSampleDetails(appt.sample_details || "");
+    setIsSampleDialogOpen(true);
+  };
+
+  const handleSaveSampleDetails = () => {
+    if (!currentAppointment) return;
+    updateAppointment.mutate({
+      id: currentAppointment.id,
+      updates: {
+        samples_collected: true,
+        sample_details: sampleDetails,
+      },
+    });
+    setIsSampleDialogOpen(false);
+    setCurrentAppointment(null);
+  };
+
+  const handleDropOffSamplesClick = (id: string) => {
+    updateAppointment.mutate({
+      id,
+      updates: {
+        samples_dropped_off: true,
+        drop_off_timestamp: new Date().toISOString(),
+      },
+    });
+  };
+
   const today = toLocalYMD(new Date());
   const todaysAppointments = useMemo(
     () =>
@@ -248,14 +293,30 @@ export default function Appointments() {
       showError("Need at least two locations.");
       return;
     }
-    const loading = showLoading("Calculating route...");
+    const loading = showLoading("Calculating optimized route...");
     try {
       const coordsFull = await Promise.all(addressesFull.map(geocode));
-      setRouteCoords(coordsFull);
+      
+      const osrmCoords = coordsFull.map(([lat, lon]) => `${lon},${lat}`).join(';');
+      const osrmUrl = `https://router.project-osrm.org/trip/v1/driving/${osrmCoords}?source=first&destination=last&roundtrip=false`;
+      
+      const routeResponse = await fetch(osrmUrl);
+      if (!routeResponse.ok) throw new Error("Failed to fetch route from OSRM.");
+      const routeData = await routeResponse.json();
 
-      const origin = encodeURIComponent(addressesFull[0]);
-      const dest = encodeURIComponent(addressesFull[addressesFull.length - 1]);
-      const wps = addressesFull.slice(1, -1).map(encodeURIComponent).join("|");
+      if (routeData.code !== 'Ok') {
+        throw new Error(routeData.message || 'Failed to get optimized route');
+      }
+
+      const waypointOrder = routeData.waypoints.map((wp: any) => wp.waypoint_index);
+      const orderedAddresses = waypointOrder.map((i: number) => addressesFull[i]);
+      const orderedCoords = waypointOrder.map((i: number) => coordsFull[i]);
+
+      setRouteCoords(orderedCoords);
+
+      const origin = encodeURIComponent(orderedAddresses[0]);
+      const dest = encodeURIComponent(orderedAddresses[orderedAddresses.length - 1]);
+      const wps = orderedAddresses.slice(1, -1).map(encodeURIComponent).join("|");
       setRouteUrl(
         `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}${
           wps ? `&waypoints=${wps}` : ""
@@ -265,7 +326,7 @@ export default function Appointments() {
       localStorage.setItem("route-start", routeStart);
       localStorage.setItem("route-end", routeEnd);
       dismissToast(loading);
-      showSuccess("Route planned!");
+      showSuccess("Optimized route planned!");
     } catch (err: any) {
       dismissToast(loading);
       showError(err.message || "Route planning failed");
@@ -399,25 +460,47 @@ export default function Appointments() {
           {todaysAppointments.length === 0 ? (
             <div className="text-gray-500">No appointments today.</div>
           ) : (
-            <ul className="space-y-2">
+            <ul className="space-y-4">
               {todaysAppointments.map((a) => {
                 const client = clients.find((c) => c.id === a.client_id);
                 return (
-                  <li key={a.id} className="border-b pb-2 flex justify-between items-start">
-                    <div>
-                      <div className="font-semibold">
-                        {a.time} – {client?.name || "Unknown"}
+                  <li key={a.id} className="border-b pb-3 space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <div className="font-semibold">
+                          {a.time} – {client?.name || "Unknown"}
+                        </div>
+                        {a.location && <div className="text-sm">{a.location}</div>}
+                        {a.notes && <div className="text-xs text-gray-500">{a.notes}</div>}
                       </div>
-                      {a.location && <div className="text-sm">{a.location}</div>}
-                      {a.notes && <div className="text-xs text-gray-500">{a.notes}</div>}
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="outline" onClick={() => handleEdit(a)}>
+                          Edit
+                        </Button>
+                        <Button size="sm" variant="destructive" onClick={() => handleDelete(a.id)}>
+                          Delete
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex gap-1">
-                      <Button size="sm" variant="outline" onClick={() => handleEdit(a)}>
-                        Edit
-                      </Button>
-                      <Button size="sm" variant="destructive" onClick={() => handleDelete(a.id)}>
-                        Delete
-                      </Button>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        {a.samples_dropped_off ? (
+                          <Badge>Dropped Off</Badge>
+                        ) : a.samples_collected ? (
+                          <Badge variant="secondary">Collected</Badge>
+                        ) : (
+                          <Badge variant="outline">Pending</Badge>
+                        )}
+                        {a.sample_details && <p className="text-xs text-gray-500 mt-1">Details: {a.sample_details}</p>}
+                      </div>
+                      <div className="flex gap-2">
+                        {!a.samples_collected && (
+                          <Button size="sm" onClick={() => handleCollectSamplesClick(a)}>Collect Samples</Button>
+                        )}
+                        {a.samples_collected && !a.samples_dropped_off && (
+                          <Button size="sm" onClick={() => handleDropOffSamplesClick(a.id)}>Drop Off</Button>
+                        )}
+                      </div>
                     </div>
                   </li>
                 );
@@ -443,7 +526,7 @@ export default function Appointments() {
             onChange={(e) => setRouteEnd(e.target.value)}
           />
           <Button onClick={planRoute} className="w-full">
-            Generate Route
+            Generate Optimized Route
           </Button>
           {routeUrl && (
             <a
@@ -468,6 +551,29 @@ export default function Appointments() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={isSampleDialogOpen} onOpenChange={setIsSampleDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Log Sample Collection</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            <p className="text-sm text-gray-600">
+              Client: {currentAppointment && clients.find(c => c.id === currentAppointment.client_id)?.name}
+            </p>
+            <Textarea
+              placeholder="Enter sample details (e.g., tube colors, special handling)..."
+              value={sampleDetails}
+              onChange={(e) => setSampleDetails(e.target.value)}
+              rows={4}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setIsSampleDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSaveSampleDetails}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
