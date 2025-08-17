@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,7 +7,7 @@ import { showSuccess, showError, showLoading, dismissToast } from "@/utils/toast
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useSupabaseAuth } from "@/contexts/SupabaseAuthProvider";
-import { Trash2 } from "lucide-react";
+import { Trash2, Camera, FileUp } from "lucide-react";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 
@@ -38,6 +38,9 @@ export default function MileTracker() {
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptDate, setReceiptDate] = useState<string>("");
   const [selectedReceipts, setSelectedReceipts] = useState<string[]>([]);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
 
   const { data: entries = [], isLoading: loadingEntries } = useQuery<MileEntry[]>({
     queryKey: ["mile_entries"],
@@ -220,10 +223,25 @@ export default function MileTracker() {
       <Card>
         <CardHeader><CardTitle>Receipts</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          <div className="space-y-2">
+          <div className="space-y-3 border p-4 rounded-lg">
+            <h3 className="text-md font-semibold text-center">Add New Receipt</h3>
             <Input type="date" value={receiptDate} onChange={(e) => setReceiptDate(e.target.value)} />
-            <Input type="file" onChange={handleFileChange} />
-            <Button onClick={() => { if (receiptFile && receiptDate) { uploadReceipt.mutate({ file: receiptFile, date: receiptDate }); } else { showError("Please select a receipt file and date."); } }} disabled={!receiptFile || !receiptDate || uploadReceipt.isPending}>
+            
+            <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+            <input type="file" accept="image/*" capture="environment" ref={cameraInputRef} onChange={handleFileChange} className="hidden" />
+
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => fileInputRef.current?.click()} className="w-full">
+                <FileUp className="mr-2 h-4 w-4" /> Upload File
+              </Button>
+              <Button variant="outline" onClick={() => cameraInputRef.current?.click()} className="w-full">
+                <Camera className="mr-2 h-4 w-4" /> Take Photo
+              </Button>
+            </div>
+
+            {receiptFile && <p className="text-sm text-gray-500 text-center">Selected: {receiptFile.name}</p>}
+
+            <Button onClick={() => { if (receiptFile && receiptDate) { uploadReceipt.mutate({ file: receiptFile, date: receiptDate }); } else { showError("Please select a receipt file and date."); } }} disabled={!receiptFile || !receiptDate || uploadReceipt.isPending} className="w-full">
               {uploadReceipt.isPending ? "Uploading..." : "Upload Receipt"}
             </Button>
           </div>
