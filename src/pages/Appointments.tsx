@@ -512,8 +512,6 @@ const Appointments = () => {
               <div className="mb-2 font-medium">Total Route Miles: {totalMiles}</div>
               <MapContainer
                 style={{ height: "300px", width: "100%" }}
-                center={routeCoords[0] as LatLngExpression}
-                zoom={12}
               >
                 <ChangeView center={routeCoords[0] as LatLngExpression} zoom={12} />
                 <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
