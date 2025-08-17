@@ -77,7 +77,6 @@ export default function Appointments() {
 
   const [form, setForm] = useState(initialForm);
   const [editingId, setEditingId] = useState<string | null>(null);
-
   const [addingClient, setAddingClient] = useState(false);
   const [newClient, setNewClient] = useState<Omit<Client, "id" | "user_id">>({
     name: "",
@@ -238,56 +237,65 @@ export default function Appointments() {
 
   const planRoute = async () => {
     setLeaveTimes([]);
-    const addresses: string[] = [];
-    if (routeStart.trim()) addresses.push(routeStart.trim());
-    todaysAppointments.forEach((a) => {
+    const stops = todaysAppointments.map((a) => {
       const client = clients.find((c) => c.id === a.client_id);
-      const addr = a.location || client?.address || "";
-      if (addr.trim()) addresses.push(addr.trim());
-    });
-    if (routeEnd.trim()) addresses.push(routeEnd.trim());
-    if (addresses.length < 2) {
+      return (a.location || client?.address || "").trim();
+    }).filter((s) => s);
+    const addressesFull = [
+      ...(routeStart.trim() ? [routeStart.trim()] : []),
+      ...stops,
+      ...(routeEnd.trim() ? [routeEnd.trim()] : []),
+    ];
+    if (addressesFull.length < 2) {
       showError("Need at least two locations.");
       return;
     }
 
     const loading = showLoading("Calculating route...");
     try {
-      const coords = await Promise.all(addresses.map(geocode));
-      setRouteCoords(coords);
+      const coordsFull = await Promise.all(addressesFull.map(geocode));
+      setRouteCoords(coordsFull);
 
-      // get durations via OSRM
-      const coordString = coords.map(([lat, lng]) => `${lng},${lat}`).join(";");
-      const osrmRes = await fetch(
-        `https://router.project-osrm.org/route/v1/driving/${coordString}?overview=false`
-      );
-      const osrmData = await osrmRes.json();
-      const legs = osrmData.routes?.[0]?.legs || [];
-      const durations = legs.map((leg: any) => leg.duration);
-
-      // compute leave times
-      const times: string[] = [];
-      todaysAppointments.forEach((appt, idx) => {
-        const [h, m] = appt.time.split(":").map(Number);
-        const apptSec = h * 3600 + m * 60;
-        const travelSec = durations[idx] || 0;
-        let leaveSec = apptSec - travelSec;
-        if (leaveSec < 0) leaveSec = 0;
-        const lh = Math.floor(leaveSec / 3600);
-        const lm = Math.floor((leaveSec % 3600) / 60);
-        times.push(`${String(lh).padStart(2, "0")}:${String(lm).padStart(2, "0")}`);
-      });
-      setLeaveTimes(times);
+      // For leave-times, build just start+stops (ignore end)
+      const coordsLT = [
+        ...(routeStart.trim() ? [coordsFull[0]] : []),
+        ...coordsFull.slice(routeStart.trim() ? 1 : 0, stops.length + (routeStart.trim() ? 1 : 0))
+      ];
+      if (coordsLT.length >= 2) {
+        const coordStringLT = coordsLT.map(([lat, lng]) => `${lng},${lat}`).join(";");
+        const osrmRes = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${coordStringLT}?overview=false`
+        );
+        const osrmData = await osrmRes.json();
+        const legs = osrmData.routes?.[0]?.legs || [];
+        const durations = legs.map((leg: any) => leg.duration);
+        const times: string[] = [];
+        todaysAppointments.forEach((appt, idx) => {
+          const [h, m] = appt.time.split(":").map(Number);
+          const apptSec = h * 3600 + m * 60;
+          const travelSec =
+            idx === 0 && !routeStart.trim()
+              ? 0
+              : durations[idx] || 0;
+          let leaveSec = apptSec - travelSec;
+          if (leaveSec < 0) leaveSec = 0;
+          const lh = Math.floor(leaveSec / 3600);
+          const lm = Math.floor((leaveSec % 3600) / 60);
+          times.push(`${String(lh).padStart(2, "0")}:${String(lm).padStart(2, "0")}`);
+        });
+        setLeaveTimes(times);
+      }
 
       // Google Maps link
-      const origin = encodeURIComponent(addresses[0]);
-      const dest = encodeURIComponent(addresses[addresses.length - 1]);
-      const wps = addresses.slice(1, -1).map(encodeURIComponent).join("|");
+      const origin = encodeURIComponent(addressesFull[0]);
+      const dest = encodeURIComponent(addressesFull[addressesFull.length - 1]);
+      const wps = addressesFull.slice(1, -1).map(encodeURIComponent).join("|");
       setRouteUrl(
         `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${dest}${
           wps ? `&waypoints=${wps}` : ""
         }&travelmode=driving`
       );
+
       localStorage.setItem("route-start", routeStart);
       localStorage.setItem("route-end", routeEnd);
       dismissToast(loading);
@@ -300,6 +308,7 @@ export default function Appointments() {
 
   return (
     <div className="max-w-xl mx-auto space-y-6 py-4">
+      {/* Add/edit form */}
       <Card>
         <CardHeader>
           <CardTitle>{editingId ? "Edit Appointment" : "New Appointment"}</CardTitle>
@@ -417,6 +426,7 @@ export default function Appointments() {
         </CardContent>
       </Card>
 
+      {/* Today's list with leave times */}
       <Card>
         <CardHeader>
           <CardTitle>Today's Appointments</CardTitle>
@@ -464,6 +474,7 @@ export default function Appointments() {
         </CardContent>
       </Card>
 
+      {/* Route planner */}
       <Card>
         <CardHeader>
           <CardTitle>Plan Route</CardTitle>
