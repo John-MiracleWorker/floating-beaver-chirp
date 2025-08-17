@@ -24,12 +24,21 @@ serve(async (req) => {
       { global: { headers: { Authorization: req.headers.get("Authorization")! } } }
     );
 
-    const { data: { user } } = await userClient.auth.getUser();
+    const {
+      data: { user },
+    } = await userClient.auth.getUser();
     if (!user) throw new Error("Unauthorized");
 
-    const body = await req.json();
+    // Read raw text and parse JSON manually
+    const raw = await req.text();
+    let body: any;
+    try {
+      body = JSON.parse(raw);
+    } catch {
+      throw new Error("Invalid JSON body");
+    }
 
-    if (req.method === "POST") { // Generate signed URL
+    if (req.method === "POST") {
       const { fileName } = body;
       if (!fileName) throw new Error("fileName is required.");
       const path = `${user.id}/${Date.now()}_${fileName}`;
@@ -37,24 +46,37 @@ serve(async (req) => {
         .from("receipts")
         .createSignedUrl(path, 300, { upsert: true });
       if (error) throw error;
-      return new Response(JSON.stringify({ signedUrl: data.signedUrl, path }), { headers: corsHeaders });
+      return new Response(
+        JSON.stringify({ signedUrl: data.signedUrl, path }),
+        { headers: corsHeaders }
+      );
     }
 
-    if (req.method === "PUT") { // Create DB record
+    if (req.method === "PUT") {
       const { path, fileName } = body;
       if (!path || !fileName) throw new Error("path and fileName are required.");
-      const { data: { publicUrl } } = supabaseAdmin.storage.from("receipts").getPublicUrl(path);
+      const {
+        data: { publicUrl },
+      } = supabaseAdmin.storage.from("receipts").getPublicUrl(path);
       const { error } = await supabaseAdmin.from("receipts").insert({
         user_id: user.id,
         file_name: fileName,
         file_url: publicUrl,
       });
       if (error) throw error;
-      return new Response(JSON.stringify({ success: true }), { headers: corsHeaders });
+      return new Response(JSON.stringify({ success: true }), {
+        headers: corsHeaders,
+      });
     }
 
-    return new Response(JSON.stringify({ error: "Method Not Allowed" }), { status: 405, headers: corsHeaders });
-  } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), { status: 400, headers: corsHeaders });
+    return new Response(JSON.stringify({ error: "Method Not Allowed" }), {
+      status: 405,
+      headers: corsHeaders,
+    });
+  } catch (error: any) {
+    return new Response(JSON.stringify({ error: error.message }), {
+      status: 400,
+      headers: corsHeaders,
+    });
   }
 });
