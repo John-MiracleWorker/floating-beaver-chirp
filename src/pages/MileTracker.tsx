@@ -25,12 +25,7 @@ type Receipt = {
   created_at: string;
 };
 
-const initialForm = {
-  date: "",
-  distance: "",
-  purpose: "",
-  notes: "",
-};
+const initialForm = { date: "", distance: "", purpose: "", notes: "" };
 
 export default function MileTracker() {
   const { session } = useSupabaseAuth();
@@ -38,7 +33,6 @@ export default function MileTracker() {
   const [form, setForm] = useState(initialForm);
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
 
-  // entries
   const { data: entries = [], isLoading: loadingEntries } = useQuery<MileEntry[]>({
     queryKey: ["mile_entries"],
     queryFn: async () => {
@@ -52,7 +46,6 @@ export default function MileTracker() {
     },
   });
 
-  // receipts
   const { data: receipts = [], isLoading: loadingReceipts } = useQuery<Receipt[]>({
     queryKey: ["receipts"],
     queryFn: async () => {
@@ -65,12 +58,8 @@ export default function MileTracker() {
     },
   });
 
-  // total miles
-  const totalMiles = entries
-    .reduce((sum, e) => sum + parseFloat(e.distance || "0"), 0)
-    .toFixed(1);
+  const totalMiles = entries.reduce((sum, e) => sum + parseFloat(e.distance || "0"), 0).toFixed(1);
 
-  // add entry
   const addEntry = useMutation({
     mutationFn: async (payload: Omit<MileEntry, "id" | "created_at">) => {
       const { error } = await supabase.from("mile_entries").insert(payload);
@@ -86,43 +75,31 @@ export default function MileTracker() {
     },
   });
 
-  // upload receipt
   const uploadReceipt = useMutation({
     mutationFn: async (file: File) => {
-      const userId = session?.user?.id;
-      if (!userId) {
-        throw new Error("You must be signed in to upload a receipt.");
-      }
-
-      const path = `${userId}/${Date.now()}_${file.name}`;
-      const { error: uploadErr } = await supabase.storage.from("receipts").upload(path, file);
-      if (uploadErr) throw uploadErr;
-
-      const { data: urlData } = supabase.storage.from("receipts").getPublicUrl(path);
-      const publicUrl = urlData.publicUrl;
-
-      const { error: insertErr } = await supabase.from("receipts").insert({
-        user_id: userId,
-        file_name: file.name,
-        file_url: publicUrl,
-      });
-      if (insertErr) throw insertErr;
+      const userId = session?.user.id;
+      if (!userId) throw new Error("Not signed in");
+      const buffer = await file.arrayBuffer();
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(buffer)));
+      const res = await fetch(
+        `https://${"llcheplsmuqjzdvjksot"}.supabase.co/functions/v1/uploadReceipt`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId, fileName: file.name, fileData: base64 }),
+        }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Upload failed");
+      return json.fileUrl;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["receipts"] });
       showSuccess("Receipt uploaded!");
       setReceiptFile(null);
     },
-    onError: (error: any) => {
-      if (error.message && error.message.includes("The resource was not found")) {
-        showError(
-          "Storage bucket 'receipts' not found – please create it in Supabase dashboard under Storage > Buckets."
-        );
-      } else if (error.message && /row-level security/i.test(error.message)) {
-        showError("Upload blocked by security policy. Please try again now that policies were reset.");
-      } else {
-        showError(error.message || "Receipt upload failed");
-      }
+    onError: (err: any) => {
+      showError(err.message || "Receipt upload failed");
     },
   });
 
@@ -133,7 +110,7 @@ export default function MileTracker() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.date || !form.distance) return;
-    const userId = session?.user?.id;
+    const userId = session?.user.id;
     if (!userId) {
       showError("You must be signed in to add entries.");
       return;
@@ -151,10 +128,6 @@ export default function MileTracker() {
     setReceiptFile(e.target.files?.[0] ?? null);
   };
 
-  const handleUpload = () => {
-    if (receiptFile) uploadReceipt.mutate(receiptFile);
-  };
-
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div className="text-lg font-semibold">Total Miles: {totalMiles}</div>
@@ -165,13 +138,7 @@ export default function MileTracker() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-3">
-            <Input
-              type="date"
-              name="date"
-              value={form.date}
-              onChange={handleChange}
-              required
-            />
+            <Input type="date" name="date" value={form.date} onChange={handleChange} required />
             <Input
               type="number"
               name="distance"
@@ -239,7 +206,10 @@ export default function MileTracker() {
         </CardHeader>
         <CardContent className="space-y-3">
           <input type="file" onChange={handleFileChange} />
-          <Button onClick={handleUpload} disabled={!receiptFile}>
+          <Button
+            onClick={() => receiptFile && uploadReceipt.mutate(receiptFile)}
+            disabled={!receiptFile}
+          >
             {uploadReceipt.status === "pending" ? "Uploading..." : "Upload Receipt"}
           </Button>
           {loadingReceipts ? (
