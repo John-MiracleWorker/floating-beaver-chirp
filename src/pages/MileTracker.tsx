@@ -80,7 +80,7 @@ export default function MileTracker() {
       // 1. Get a signed URL from our edge function
       const { data: urlData, error: urlError } = await supabase.functions.invoke("receipt-handler", {
         method: "POST",
-        body: { fileName: file.name },
+        body: JSON.stringify({ fileName: file.name }),
       });
       if (urlError) throw urlError;
       const { signedUrl, path } = urlData;
@@ -92,7 +92,7 @@ export default function MileTracker() {
       // 3. Create the database record
       const { error: recordError } = await supabase.functions.invoke("receipt-handler", {
         method: "PUT",
-        body: { path, fileName: file.name },
+        body: JSON.stringify({ path, fileName: file.name }),
       });
       if (recordError) throw recordError;
     },
