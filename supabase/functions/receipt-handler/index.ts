@@ -29,13 +29,27 @@ serve(async (req) => {
     } = await userClient.auth.getUser();
     if (!user) throw new Error("Unauthorized");
 
-    // Read raw text and parse JSON manually
+    // Read raw text
     const raw = await req.text();
-    let body: any;
+    // Supabase may wrap your JSON in a { body: "..." } envelope
+    let parsed: any;
     try {
-      body = JSON.parse(raw);
+      parsed = JSON.parse(raw);
     } catch {
       throw new Error("Invalid JSON body");
+    }
+    let body = parsed;
+    if (parsed?.body) {
+      // body.body might be a JSON string or object
+      if (typeof parsed.body === "string") {
+        try {
+          body = JSON.parse(parsed.body);
+        } catch {
+          throw new Error("Invalid JSON in wrapped body");
+        }
+      } else {
+        body = parsed.body;
+      }
     }
 
     if (req.method === "POST") {
@@ -73,8 +87,8 @@ serve(async (req) => {
       status: 405,
       headers: corsHeaders,
     });
-  } catch (error: any) {
-    return new Response(JSON.stringify({ error: error.message }), {
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message }), {
       status: 400,
       headers: corsHeaders,
     });
